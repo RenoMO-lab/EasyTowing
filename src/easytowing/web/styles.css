@@ -1,0 +1,703 @@
+:root {
+  color-scheme: dark;
+  --bg0: #08111d;
+  --bg1: #0d1827;
+  --panel: rgba(11, 22, 36, 0.92);
+  --panel-strong: rgba(15, 28, 44, 0.98);
+  --line: rgba(106, 136, 170, 0.28);
+  --text: #e7eef7;
+  --muted: #96a8be;
+  --accent: #72e5ff;
+  --accent-2: #f4b860;
+  --good: #69d39d;
+  --bad: #ff7d7d;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Bahnschrift", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(114, 229, 255, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(244, 184, 96, 0.12), transparent 24%),
+    linear-gradient(180deg, var(--bg0), var(--bg1) 55%, #07101a);
+}
+
+.shell {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.74rem;
+  color: var(--accent);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: clamp(2rem, 2.4vw, 3rem);
+  font-weight: 700;
+}
+
+.status-card,
+.metric-card,
+.wheel-table-card,
+.note-card,
+.canvas-card,
+.control-bar {
+  border: 1px solid rgba(138, 171, 204, 0.18);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.status-card {
+  border-radius: 18px;
+  padding: 16px 18px;
+  min-width: 180px;
+}
+
+.status-label,
+.metric-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 6px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
+  gap: 20px;
+}
+
+.canvas-card {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 18px 22px 10px;
+}
+
+.card-header p {
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.canvas-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.canvas-controls select {
+  border-radius: 12px;
+  border: 1px solid rgba(138, 171, 204, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(114, 229, 255, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(114, 229, 255, 0.22);
+  white-space: nowrap;
+}
+
+.diagram-stack {
+  position: relative;
+}
+
+#diagram,
+#dimensioned-sketch {
+  display: block;
+  width: 100%;
+  height: min(72vh, 920px);
+}
+
+#diagram[hidden],
+#dimensioned-sketch[hidden] {
+  display: none;
+}
+
+#diagram {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    radial-gradient(circle at center, rgba(114, 229, 255, 0.08), transparent 60%);
+}
+
+#dimensioned-sketch {
+  object-fit: contain;
+  background: #08111d;
+}
+
+.info-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.metric-card,
+.wheel-table-card,
+.note-card {
+  border-radius: 20px;
+  padding: 16px 18px;
+}
+
+.metric-card strong {
+  font-size: 1.2rem;
+}
+
+.wheel-table-card h3 {
+  margin-bottom: 12px;
+}
+
+.curve-card {
+  overflow: hidden;
+}
+
+.curve-preview {
+  display: block;
+  width: 100%;
+  max-height: 540px;
+  object-fit: contain;
+  border-radius: 16px;
+  border: 1px solid rgba(138, 171, 204, 0.18);
+  background: #08111d;
+}
+
+.curve-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.wheel-table {
+  display: grid;
+  gap: 10px;
+}
+
+.wheel-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wheel-row .label {
+  color: var(--muted);
+}
+
+.wheel-row .value {
+  font-variant-numeric: tabular-nums;
+}
+
+.note-card p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.control-bar {
+  margin-top: 20px;
+  border-radius: 22px;
+  padding: 18px 22px 14px;
+}
+
+.control-bar label {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 0.98rem;
+}
+
+#beta-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.scale-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 6px;
+}
+
+.axis {
+  stroke: rgba(148, 163, 184, 0.42);
+  stroke-width: 24;
+}
+
+.grid-line {
+  stroke: rgba(255, 255, 255, 0.045);
+  stroke-width: 1.5;
+}
+
+.body-outline {
+  fill: rgba(114, 229, 255, 0.05);
+  stroke: rgba(114, 229, 255, 0.5);
+  stroke-width: 18;
+}
+
+.axle-line {
+  stroke: rgba(244, 184, 96, 0.72);
+  stroke-width: 18;
+}
+
+.wheel-body {
+  fill: rgba(245, 248, 255, 0.95);
+  stroke: rgba(8, 17, 29, 0.88);
+  stroke-width: 8;
+}
+
+.wheel-heading {
+  stroke: var(--good);
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.icr-point {
+  fill: var(--bad);
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 8;
+}
+
+.icr-ray {
+  stroke: rgba(255, 125, 125, 0.45);
+  stroke-width: 6;
+  stroke-dasharray: 26 18;
+}
+
+.wheel-label {
+  fill: var(--text);
+  font-size: 96px;
+  font-family: "Bahnschrift", "Segoe UI", sans-serif;
+}
+
+.linkage-input-rod {
+  stroke: rgba(244, 184, 96, 0.95);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.linkage-input-arm {
+  stroke: rgba(255, 214, 153, 0.95);
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.linkage-output-arm {
+  stroke: rgba(114, 229, 255, 0.9);
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.linkage-tie-rod {
+  stroke: rgba(255, 125, 125, 0.9);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.linkage-steering-arm {
+  stroke: rgba(105, 211, 157, 0.95);
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.linkage-pivot {
+  fill: rgba(255, 255, 255, 0.96);
+  stroke: rgba(8, 17, 29, 0.92);
+  stroke-width: 8;
+}
+
+.linkage-node {
+  fill: rgba(244, 184, 96, 0.95);
+  stroke: rgba(8, 17, 29, 0.92);
+  stroke-width: 6;
+}
+
+.linkage-driver {
+  fill: rgba(114, 229, 255, 0.95);
+  stroke: rgba(8, 17, 29, 0.92);
+  stroke-width: 6;
+}
+
+.linkage-label {
+  fill: var(--accent);
+  font-size: 78px;
+  font-family: "Bahnschrift", "Segoe UI", sans-serif;
+}
+
+.opt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.opt-header h3 {
+  margin-bottom: 0;
+}
+
+.opt-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.opt-controls select,
+.opt-controls button {
+  border-radius: 12px;
+  border: 1px solid rgba(138, 171, 204, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.opt-controls button {
+  cursor: pointer;
+  background: rgba(114, 229, 255, 0.18);
+  border-color: rgba(114, 229, 255, 0.3);
+}
+
+.opt-controls button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.opt-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metric-card-compact {
+  padding: 12px 14px;
+}
+
+.metric-card-compact strong {
+  font-size: 1rem;
+}
+
+.opt-variable-heading {
+  margin: 6px 0 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.project-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.project-header h3 {
+  margin-bottom: 0;
+}
+
+.project-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.project-controls input,
+.project-note-input {
+  border-radius: 12px;
+  border: 1px solid rgba(138, 171, 204, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.project-controls input {
+  min-width: 200px;
+}
+
+.project-note-input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.project-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.revision-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid rgba(138, 171, 204, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.revision-row.active {
+  border-color: rgba(114, 229, 255, 0.4);
+  background: rgba(114, 229, 255, 0.08);
+}
+
+.revision-title {
+  font-size: 0.95rem;
+}
+
+.revision-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.revision-action {
+  border-radius: 10px;
+  border: 1px solid rgba(114, 229, 255, 0.24);
+  background: rgba(114, 229, 255, 0.12);
+  color: var(--text);
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.revision-action:hover {
+  background: rgba(114, 229, 255, 0.18);
+}
+
+.export-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.export-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(138, 171, 204, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.export-links a:hover {
+  border-color: rgba(114, 229, 255, 0.36);
+  background: rgba(114, 229, 255, 0.12);
+}
+
+.export-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.dxf-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.dxf-controls input,
+.dxf-controls button {
+  border-radius: 12px;
+  border: 1px solid rgba(138, 171, 204, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.dxf-controls input {
+  flex: 1 1 240px;
+}
+
+.dxf-controls button {
+  cursor: pointer;
+  background: rgba(244, 184, 96, 0.12);
+  border-color: rgba(244, 184, 96, 0.3);
+}
+
+.dxf-controls button:hover {
+  background: rgba(244, 184, 96, 0.18);
+}
+
+.dxf-controls button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.dxf-status {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.dxf-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.dxf-entity-row,
+.dxf-empty-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dxf-entity-row.modified {
+  border: 1px solid rgba(244, 184, 96, 0.28);
+  background: rgba(244, 184, 96, 0.05);
+}
+
+.dxf-entity-main {
+  display: grid;
+  gap: 4px;
+}
+
+.dxf-entity-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.dxf-entity-summary {
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+.dxf-entity-detail {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.dxf-entity-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dxf-entity-select {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(138, 171, 204, 0.22);
+  background: rgba(8, 17, 29, 0.8);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.dxf-empty-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.clearance-circle {
+  fill: rgba(255, 125, 125, 0.03);
+  stroke: rgba(255, 125, 125, 0.28);
+  stroke-width: 8;
+  stroke-dasharray: 28 18;
+}
+
+.clearance-capsule {
+  stroke: rgba(244, 184, 96, 0.24);
+  stroke-linecap: round;
+  stroke-dasharray: 24 18;
+  fill: none;
+}
+
+.clearance-polygon {
+  fill: rgba(114, 229, 255, 0.04);
+  stroke: rgba(114, 229, 255, 0.28);
+  stroke-width: 10;
+  stroke-dasharray: 26 18;
+}
+
+.clearance-highlight {
+  stroke: rgba(255, 240, 180, 0.9) !important;
+  fill: rgba(255, 240, 180, 0.08) !important;
+  opacity: 0.9;
+}
+
+@media (max-width: 1120px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  #diagram {
+    height: 58vh;
+  }
+}

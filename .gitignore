@@ -1,0 +1,12 @@
+.playwright-cli/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.venv/
+env/
+venv/
+.easytowing-state/
+.codex-temp/
+tmp/
+*.egg-info/
