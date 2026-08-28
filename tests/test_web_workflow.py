@@ -196,7 +196,7 @@ class WebWorkflowContractTests(unittest.TestCase):
 
     def test_combination_editor_preserves_body_tree_connections(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
-        self.assertIn('parentLabel.textContent = "Parent body"', javascript)
+        self.assertIn('parentLabel.textContent = "Connected to / parent"', javascript)
         self.assertIn("parentBodyId", javascript)
         self.assertIn("childJointsByParent", javascript)
         self.assertIn("Stored combination contains a body connection cycle.", javascript)
@@ -225,6 +225,13 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn(".metric-card strong", styles)
         self.assertIn("overflow-wrap: anywhere;", styles)
 
+    def test_mobile_workflow_explains_the_task_before_showing_the_canvas(self) -> None:
+        styles = (ROOT / "easytowing" / "web" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("display: flex;", styles)
+        self.assertIn(".info-panel {\n    order: 1;", styles)
+        self.assertIn(".canvas-card {\n    order: 2;", styles)
+        self.assertIn(".combination-card {\n  order: 1;", styles)
+
     def test_multi_body_outline_input_has_an_explicit_rectangular_fallback(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         styles = (ROOT / "easytowing" / "web" / "styles.css").read_text(encoding="utf-8")
@@ -242,6 +249,17 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("const wheels = Array.isArray(axle.wheels)", javascript)
         self.assertIn("const wheels = Array.isArray(payloadAxle.wheels)", javascript)
         self.assertIn("one output may drive a wheel end", html)
+
+    def test_multi_vehicle_mapping_uses_engineer_facing_terminology(self) -> None:
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "easytowing" / "web" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("Vehicle / trailer combination", html)
+        self.assertIn("How to map your combination", html)
+        self.assertIn("Vehicles / trailers", html)
+        self.assertIn("root reference", javascript)
+        self.assertIn("Connected to / parent", javascript)
+        self.assertIn(".combination-model-guide", styles)
 
     def test_dxf_activation_requires_units_and_coordinate_frame_confirmation(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")

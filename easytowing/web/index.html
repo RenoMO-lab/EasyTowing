@@ -335,7 +335,7 @@
           <div class="project-header">
             <div>
               <p class="card-kicker">Multi-body model</p>
-              <h3>Vehicle combination</h3>
+              <h3>Vehicle / trailer combination</h3>
             </div>
             <div class="project-controls combination-mode-controls">
               <span id="combination-mode-state" class="mode-state" data-status="active">ACTIVE</span>
@@ -343,11 +343,19 @@
               <button id="combination-activate-button" type="button" hidden>Use multi-body workflow</button>
             </div>
           </div>
-          <p id="combination-mode-note" class="curve-note">Define every rigid body, its parent connection, articulation joint, and mounted axle. A parent may have multiple connected child bodies for branched towing assemblies. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Confirm the layout after checking the source CAD and all dimensions; only then continue to Maneuver.</p>
+          <p id="combination-mode-note" class="curve-note">Define every rigid vehicle or trailer, its connection joint, mounted axles, and packaging envelope. A towing unit may connect to multiple child units for branched assemblies. Set each physical joint stop before choosing its sweep range; a range outside the stop is a hard FAIL. Confirm the layout after checking the source CAD and all dimensions; only then continue to Maneuver.</p>
+          <div class="combination-model-guide">
+            <strong>How to map your combination</strong>
+            <ol>
+              <li>Set the count to the number of rigid vehicles, trailers, or dollies in the study.</li>
+              <li>The first row is the fixed root reference. Each later row is the vehicle or trailer connected to its selected parent at one articulation joint.</li>
+              <li>Name rows with engineering terms such as tractor, dolly, or trailer 1. Enter axle and wheel dimensions in that unit's local frame; +Y means left.</li>
+            </ol>
+          </div>
           <div id="combination-fields" class="combination-fields">
           <div class="geometry-input-grid">
             <label>
-              Body count
+              Vehicles / trailers
               <input id="combination-body-count" type="number" min="1" max="6" step="1" value="2" inputmode="numeric">
             </label>
           </div>

@@ -3541,7 +3541,7 @@ function renderCombinationConfig() {
   }
   if (combinationModeNote) {
     combinationModeNote.textContent = active
-      ? "Define every rigid body, its parent connection, articulation joint, and mounted axle. A parent may have multiple connected child bodies for branched towing assemblies. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Continue to Maneuver when the physical combination is complete."
+      ? "Define every rigid vehicle or trailer, its connection joint, mounted axles, and packaging envelope. A towing unit may connect to multiple child units for branched assemblies. Set each physical joint stop before choosing its sweep range; a range outside the stop is a hard FAIL. Confirm the layout after checking the source CAD and all dimensions; only then continue to Maneuver."
       : "This revision uses the legacy single-layout study. Its two-body template is hidden so it cannot be mistaken for saved engineering input. Activate the multi-body workflow to create a new articulated model from the template.";
   }
   if (combinationActivateButton) {
@@ -3566,7 +3566,7 @@ function renderCombinationConfig() {
       ? null
       : state.combinationBodies.find((candidate) => candidate.id === body.parentBodyId);
     title.textContent = bodyIndex === 0
-      ? `${body.name} / root`
+      ? `${body.name} / root reference`
       : `${body.name} / connected to ${parentBody?.name || "unassigned parent"}`;
     const summary = document.createElement("small");
     summary.textContent = `${body.axles.length} axle${body.axles.length === 1 ? "" : "s"} / ${body.bodyPolygon.length >= 3 ? "CAD outline" : "rectangular envelope"}${bodyIndex === 0 ? "" : ` / current ${Number(body.articulationDeg).toFixed(1)} deg / sweep ${Number(body.articulationMinDeg).toFixed(0)}..${Number(body.articulationMaxDeg).toFixed(0)} deg / stop +/-${Number(body.articulationLimitDeg).toFixed(0)} deg`}`;
@@ -3576,13 +3576,13 @@ function renderCombinationConfig() {
     fields.className = "combination-field-grid";
     fields.append(
       makeCombinationField("Axles", body.axles.length, (value) => resizeCombinationAxles(bodyIndex, value), { min: 1, step: 1 }),
-      makeCombinationField("Body name", body.name, (value) => { body.name = String(value); }, { type: "text" }),
+      makeCombinationField("Vehicle / trailer name", body.name, (value) => { body.name = String(value); }, { type: "text" }),
       makeCombinationField("Length mm", body.lengthMm, (value) => { body.lengthMm = value; }, { min: 1, step: 10 }),
       makeCombinationField("Width mm", body.widthMm, (value) => { body.widthMm = value; }, { min: 1, step: 10 }),
     );
     if (bodyIndex > 0) {
       const parentLabel = document.createElement("label");
-      parentLabel.textContent = "Parent body";
+      parentLabel.textContent = "Connected to / parent";
       const parentSelect = document.createElement("select");
       state.combinationBodies.slice(0, bodyIndex).forEach((candidate) => {
         const option = document.createElement("option");
