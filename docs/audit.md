@@ -151,10 +151,13 @@ so a physical-feasibility PASS alone is never a release authorization.
   after the deployment has any user. PostgreSQL worker claims carry unique lease
   tokens, so a stale worker cannot overwrite a replacement worker's result after
   recovery requeues the job.
+- API request boundaries reject non-object JSON bodies and require approval
+  decisions to use actual JSON booleans, preventing truthiness coercion from
+  turning malformed approval requests into approvals.
 - PostgreSQL persistence now has composite tenant-scoped foreign keys across
   sessions, projects, revisions, approvals, jobs, artifacts, and audit actors;
   application checks remain in place as the first authorization boundary.
-- Verification on 2026-08-28: 191 automated tests passed with 3 expected
+- Verification on 2026-08-28: 195 automated tests passed with 3 expected
   PostgreSQL integration skips; Python compilation, browser JavaScript syntax,
   whitespace checks, and real-browser desktop/mobile workflow checks passed.
 

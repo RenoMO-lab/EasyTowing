@@ -9,6 +9,7 @@ from unittest.mock import patch
 from easytowing.acceptance import MonrocAcceptanceCriteria
 from easytowing.demo_server import (
     _monroc_acceptance_profile_status,
+    _parse_required_bool,
     _require_engineering_pass_for_approval,
     _should_seed_reference_project,
 )
@@ -51,6 +52,18 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("SAAS_CONTROL.bootstrap_admin", server)
         self.assertIn('"BOOTSTRAP_ALREADY_COMPLETED"', server)
         self.assertNotIn('role=UserRole(str(body.get("role"', server)
+
+    def test_api_boolean_fields_do_not_use_truthiness_coercion(self) -> None:
+        self.assertTrue(_parse_required_bool({"approved": True}, "approved"))
+        self.assertFalse(_parse_required_bool({"approved": False}, "approved"))
+        for value in ("false", "true", 0, 1, None):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "JSON boolean"):
+                    _parse_required_bool({"approved": value}, "approved")
+
+        server = (ROOT / "easytowing" / "demo_server.py").read_text(encoding="utf-8")
+        self.assertIn("JSON request body must be an object.", server)
+        self.assertIn("approved = _parse_required_bool(body, \"approved\")", server)
 
     def test_ui_exposes_reference_data_boundary_and_result_reading_guide(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")

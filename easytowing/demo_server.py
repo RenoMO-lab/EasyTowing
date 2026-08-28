@@ -164,6 +164,15 @@ def _positive_env_float(name: str, default: float) -> float:
     return value if math.isfinite(value) and value > 0.0 else default
 
 
+def _parse_required_bool(body: dict[str, object], name: str) -> bool:
+    """Read a protocol boolean without Python truthiness coercion."""
+
+    value = body.get(name)
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a JSON boolean.")
+    return value
+
+
 WORKER_MAX_AGE_SECONDS = _positive_env_float(
     "EASYTOWING_WORKER_MAX_AGE_SECONDS",
     120.0,
@@ -2679,7 +2688,10 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         if not raw:
             return {}
-        return json.loads(raw.decode("utf-8"))
+        payload = json.loads(raw.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JSON request body must be an object.")
+        return payload
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003 - match BaseHTTPRequestHandler
         return
@@ -4075,13 +4087,14 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 if revision is None:
                     self.send_error(404, "Revision not found")
                     return
-                if bool(body.get("approved", False)):
+                approved = _parse_required_bool(body, "approved")
+                if approved:
                     _require_engineering_pass_for_approval(revision)
                 approval = SAAS_CONTROL.decide_revision(
                     principal,
                     parts[2],
                     parts[4],
-                    approved=bool(body.get("approved", False)),
+                    approved=approved,
                     note=str(body.get("note", "")),
                 )
             except SaaSAuthorizationError as error:
