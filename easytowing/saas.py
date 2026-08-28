@@ -356,7 +356,12 @@ class SaaSControlStore:
         *,
         role: UserRole = UserRole.DESIGNER,
         display_name: str = "",
+        created_by: Principal | None = None,
     ) -> UserAccount:
+        if created_by is not None:
+            self.require(created_by, "user:manage")
+            if created_by.organization_id != organization_id:
+                raise SaaSAuthorizationError("Users can only be created in the administrator's organization.")
         normalized_email = email.strip().lower()
         if not normalized_email or "@" not in normalized_email:
             raise ValueError("A valid email address is required.")
@@ -375,7 +380,7 @@ class SaaSControlStore:
             self._users_by_email[key] = account
             self._audit_event(
                 organization_id=organization_id,
-                actor_user_id=None,
+                actor_user_id=created_by.user_id if created_by is not None else None,
                 event_type="USER_CREATED",
                 target_type="user",
                 target_id=account.id,
@@ -1113,7 +1118,12 @@ class PostgreSQLSaaSStore:
         *,
         role: UserRole = UserRole.DESIGNER,
         display_name: str = "",
+        created_by: Principal | None = None,
     ) -> UserAccount:
+        if created_by is not None:
+            self.require(created_by, "user:manage")
+            if created_by.organization_id != organization_id:
+                raise SaaSAuthorizationError("Users can only be created in the administrator's organization.")
         normalized_email = email.strip().lower()
         if not normalized_email or "@" not in normalized_email:
             raise ValueError("A valid email address is required.")
@@ -1127,7 +1137,8 @@ class PostgreSQLSaaSStore:
         )
 
         def insert(connection: Any) -> None:
-            connection.cursor().execute(
+            cursor = connection.cursor()
+            cursor.execute(
                 """
                 INSERT INTO users (id, organization_id, email, display_name, role, password_hash)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -1141,6 +1152,16 @@ class PostgreSQLSaaSStore:
                     account.password_hash,
                 ),
             )
+            if created_by is not None:
+                self._insert_audit_cursor(
+                    cursor,
+                    organization_id,
+                    created_by.user_id,
+                    "USER_CREATED",
+                    "user",
+                    account.id,
+                    {"email": account.email, "role": account.role.value},
+                )
 
         self._transaction(insert)
         return account

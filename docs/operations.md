@@ -110,6 +110,15 @@ hashes in the control-plane session record. The PostgreSQL adapter runs the
 schema migration on server startup; production deployments should run schema
 migrations as a controlled release step instead.
 
+After bootstrap, an authenticated administrator can create active tenant users
+from the **Admin user provisioning** form in the Workspace access panel, or by
+calling `POST /api/users` with `email`, `password`, `display_name`, and one of
+`viewer`, `designer`, `reviewer`, or `admin`. The organization is taken from
+the administrator session rather than the request body. User creation is
+tenant-scoped, audited with the administrator as actor, and the password is
+never returned. The new account appears immediately in the reviewer assignment
+selector when its role is `reviewer` or `admin`.
+
 ## Approval boundary
 
 Administrators can assign an active reviewer or administrator to a revision

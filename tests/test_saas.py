@@ -119,6 +119,32 @@ class SaaSControlTests(unittest.TestCase):
         with self.assertRaises(SaaSAuthorizationError):
             self.store.list_users(self.reviewer)
 
+    def test_admin_user_provisioning_is_tenant_scoped_and_audited(self) -> None:
+        account = self.store.create_user(
+            "monroc",
+            "new-reviewer@monroc.example",
+            "temporary password 123",
+            role=UserRole.REVIEWER,
+            display_name="New Reviewer",
+            created_by=self.admin,
+        )
+        self.assertEqual(account.display_name, "New Reviewer")
+        self.assertEqual(account.role, UserRole.REVIEWER)
+        events = [
+            event
+            for event in self.store.audit_events(self.admin, target_id=account.id)
+            if event.event_type == "USER_CREATED"
+        ]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].actor_user_id, self.admin.user_id)
+        with self.assertRaises(SaaSAuthorizationError):
+            self.store.create_user(
+                "other",
+                "new-user@other.example",
+                "temporary password 123",
+                created_by=self.admin,
+            )
+
         assigned = self.store.assign_reviewer(
             self.admin,
             "project_1",

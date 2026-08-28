@@ -299,6 +299,21 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("REVIEWER_UNASSIGNED", saas)
         self.assertIn("ADD COLUMN IF NOT EXISTS assigned_reviewer_id", schema)
 
+    def test_admin_user_provisioning_contract_is_exposed(self) -> None:
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        server = (ROOT / "easytowing" / "demo_server.py").read_text(encoding="utf-8")
+        saas = (ROOT / "easytowing" / "saas.py").read_text(encoding="utf-8")
+        self.assertIn('id="user-provisioning"', html)
+        self.assertIn('id="user-create-form"', html)
+        self.assertIn('id="user-create-role"', html)
+        self.assertIn("async function createUser", javascript)
+        self.assertIn('fetch("/api/users"', javascript)
+        self.assertIn('parsed.path == "/api/users"', server)
+        self.assertIn("created_by=principal", server)
+        self.assertIn("Users can only be created in the administrator's organization.", saas)
+        self.assertIn("actor_user_id=created_by.user_id", saas)
+
     def test_postgres_release_metadata_is_revision_scoped_and_locked(self) -> None:
         saas = (ROOT / "easytowing" / "saas.py").read_text(encoding="utf-8")
         schema = (ROOT / "easytowing" / "postgres_schema.sql").read_text(encoding="utf-8")

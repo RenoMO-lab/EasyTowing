@@ -3634,6 +3634,42 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "logged_out"})
             return
 
+        if parsed.path == "/api/users":
+            try:
+                principal = self._principal("user:manage")
+                email = body.get("email")
+                password = body.get("password")
+                display_name = body.get("display_name", "")
+                role_value = body.get("role", UserRole.DESIGNER.value)
+                if not isinstance(email, str) or not email.strip():
+                    raise ValueError("email is required and must be a string.")
+                if not isinstance(password, str) or not password:
+                    raise ValueError("password is required and must be a string.")
+                if not isinstance(display_name, str):
+                    raise ValueError("display_name must be a string.")
+                if not isinstance(role_value, str):
+                    raise ValueError("role must be a string.")
+                try:
+                    role = UserRole(role_value)
+                except ValueError as error:
+                    raise ValueError("role must be one of: viewer, designer, reviewer, admin.") from error
+                account = SAAS_CONTROL.create_user(
+                    principal.organization_id,
+                    email,
+                    password,
+                    role=role,
+                    display_name=display_name,
+                    created_by=principal,
+                )
+            except SaaSAuthorizationError as error:
+                self._send_json({"error_code": "FORBIDDEN", "message": str(error)}, status=403)
+                return
+            except (TypeError, ValueError) as error:
+                self._send_json({"error_code": "INVALID_USER", "message": str(error)}, status=400)
+                return
+            self._send_json({"user": serialize_user(account)}, status=201)
+            return
+
         if (
             len(parts) == 6
             and parts[0] == "api"

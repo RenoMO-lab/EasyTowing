@@ -154,6 +154,10 @@ so a physical-feasibility PASS alone is never a release authorization.
 - API request boundaries reject non-object JSON bodies and require approval
   decisions to use actual JSON booleans, preventing truthiness coercion from
   turning malformed approval requests into approvals.
+- Administrators can now provision tenant users from the Workspace access panel
+  or `POST /api/users`; the organization is derived from the authenticated
+  administrator, role values are validated, passwords are never serialized,
+  and the creation event records the administrator actor.
 - PostgreSQL persistence now has composite tenant-scoped foreign keys across
   sessions, projects, revisions, approvals, jobs, artifacts, and audit actors;
   application checks remain in place as the first authorization boundary.

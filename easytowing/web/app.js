@@ -222,6 +222,14 @@ const authEmailInput = document.getElementById("auth-email");
 const authPasswordInput = document.getElementById("auth-password");
 const authLoginButton = document.getElementById("auth-login-button");
 const authLogoutButton = document.getElementById("auth-logout-button");
+const userProvisioning = document.getElementById("user-provisioning");
+const userCreateForm = document.getElementById("user-create-form");
+const userCreateName = document.getElementById("user-create-name");
+const userCreateEmail = document.getElementById("user-create-email");
+const userCreateRole = document.getElementById("user-create-role");
+const userCreatePassword = document.getElementById("user-create-password");
+const userCreateButton = document.getElementById("user-create-button");
+const userCreateStatus = document.getElementById("user-create-status");
 const workspaceAccessCard = document.getElementById("workspace-access-card");
 const reviewState = document.getElementById("review-state");
 const reviewStatusNote = document.getElementById("review-status-note");
@@ -5795,6 +5803,9 @@ function authHeaders() {
 function renderAuthStatus() {
   authLogoutButton.disabled = !state.authToken;
   authLoginButton.disabled = Boolean(state.authToken);
+  const canManageUsers = hasPermission("user:manage");
+  userProvisioning.hidden = !canManageUsers;
+  userCreateButton.disabled = !canManageUsers;
   if (state.authPrincipal) {
     authStatus.textContent = `Signed in as ${state.authPrincipal.display_name} (${state.authPrincipal.role}) in ${state.authPrincipal.organization_id}.`;
   } else {
@@ -5804,6 +5815,37 @@ function renderAuthStatus() {
   }
   renderAccessControlledControls();
   renderReviewControls();
+}
+
+async function createUser() {
+  if (!hasPermission("user:manage")) {
+    return;
+  }
+  userCreateButton.disabled = true;
+  userCreateStatus.textContent = "Creating user...";
+  try {
+    const response = await fetch("/api/users", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        email: userCreateEmail.value.trim(),
+        password: userCreatePassword.value,
+        display_name: userCreateName.value.trim(),
+        role: userCreateRole.value,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    const user = payload.user;
+    userCreateStatus.textContent = `Created ${user.display_name} (${user.role}).`;
+    userCreateForm.reset();
+    userCreateRole.value = "designer";
+    await loadReviewerUsers();
+  } finally {
+    renderAuthStatus();
+  }
 }
 
 async function loadReviewerUsers() {
@@ -6837,6 +6879,14 @@ authForm.addEventListener("submit", (event) => {
 authLogoutButton.addEventListener("click", () => {
   void signOut().catch((error) => {
     authStatus.textContent = `Sign-out failed: ${error.message}`;
+  });
+});
+
+userCreateForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void createUser().catch((error) => {
+    userCreateStatus.textContent = `User creation failed: ${error.message}`;
+    renderAuthStatus();
   });
 });
 

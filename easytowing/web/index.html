@@ -226,6 +226,39 @@
               <button id="auth-logout-button" type="button" disabled>Sign out</button>
             </div>
           </form>
+          <div id="user-provisioning" class="user-provisioning" hidden>
+            <h3>Admin user provisioning</h3>
+            <p class="curve-note">Create a tenant user here. Passwords are used once to create the account and are never returned.</p>
+            <form id="user-create-form">
+              <div class="auth-grid">
+                <label>
+                  Display name
+                  <input id="user-create-name" type="text" autocomplete="name" placeholder="Design engineer">
+                </label>
+                <label>
+                  Email
+                  <input id="user-create-email" type="email" required autocomplete="email" placeholder="engineer@company.com">
+                </label>
+                <label>
+                  Role
+                  <select id="user-create-role">
+                    <option value="designer" selected>Designer</option>
+                    <option value="viewer">Viewer</option>
+                    <option value="reviewer">Reviewer</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </label>
+                <label>
+                  Temporary password
+                  <input id="user-create-password" type="password" required minlength="12" autocomplete="new-password" placeholder="At least 12 characters">
+                </label>
+              </div>
+              <div class="project-controls">
+                <button id="user-create-button" type="submit">Create user</button>
+                <span id="user-create-status" class="curve-note" role="status"></span>
+              </div>
+            </form>
+          </div>
         </details>
 
         <details class="wheel-table-card geometry-card legacy-geometry-card" data-workflow-panel="vehicle">

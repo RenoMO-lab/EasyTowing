@@ -18,6 +18,7 @@ Current status:
 - Multi-body revisions retain explicit steering coordination channels and export dimensioned diagnostic geometry as SVG, ASCII DXF, and PNG alongside JSON, CSV, and PDF evidence.
 - Persistent project state is stored in `.easytowing-state/projects.json`.
 - SaaS control-plane primitives cover authenticated sessions, tenant/role checks, assigned approvals, asynchronous jobs, audit events, and PostgreSQL schema/backup operations; local mode remains JSON/in-memory while database mode is enabled with `EASYTOWING_DATABASE_URL`.
+- Authenticated administrators can provision tenant users with role assignment from the Workspace access panel; creation is tenant-scoped and audited, and new reviewers are available for revision routing immediately.
 - Runtime health exposes separate liveness (`/api/health`) and dependency readiness (`/api/ready`) checks; PostgreSQL deployments can require a fresh worker heartbeat with `EASYTOWING_REQUIRE_WORKER=1`.
 - Multi-body revision exports are diagnostic by default; a controlled release manifest is available only after engineering PASS, Monroc acceptance, and independent approval. SVG/DXF/PNG do not constitute a controlled CAD release package.
 - Monroc acceptance evaluations remain diagnostic unless their exact criteria match a protected approved profile configured with `EASYTOWING_MONROC_ACCEPTANCE_PROFILES_JSON`.
