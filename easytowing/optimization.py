@@ -5,9 +5,10 @@ import math
 import random
 from typing import Iterable, Literal
 
-from .collision import CapsuleEnvelope, CircleEnvelope, CollisionItem, analyze_clearance
+from .collision import CollisionItem, analyze_clearance
+from .clearance_model import build_linkage_clearance_items
 from .design_cases import DesignCase
-from .errors import EngineeringError
+from .errors import EngineeringError, OptimizationNoFeasibleSolutionError
 from .actual_steering import actual_steering_errors_deg, compare_actual_to_ideal, solve_actual_steering
 from .geometry import Point2D
 from .linkage import (
@@ -104,6 +105,8 @@ class OptimizationMetrics:
     failure_index: int | None
     solved_samples: int
     sample_count: int
+    feasible: bool = True
+    violations: tuple[str, ...] = ()
     minimum_clearance_beta_deg: float | None = None
     max_abs_inner_error_deg: float | None = None
     max_abs_outer_error_deg: float | None = None
@@ -144,7 +147,15 @@ class OptimizationResult:
 
     @property
     def improved(self) -> bool:
+        if self.optimized_metrics.feasible != self.baseline_metrics.feasible:
+            return self.optimized_metrics.feasible
         return self.optimized_metrics.score < self.baseline_metrics.score
+
+
+def _metrics_better(candidate: OptimizationMetrics, incumbent: OptimizationMetrics) -> bool:
+    if candidate.feasible != incumbent.feasible:
+        return candidate.feasible
+    return candidate.score + 1e-12 < incumbent.score
 
 
 def _variables_to_map(variables: Iterable[OptimizationVariable | OptimizedVariable]) -> dict[str, float]:
@@ -262,105 +273,7 @@ def _clearance_items_for_state(
     state,
     vehicle: VehicleLayout | None = None,
 ) -> tuple[CollisionItem, ...]:
-    items: list[CollisionItem] = [
-        CollisionItem(
-            id="input_rod",
-            envelope=CapsuleEnvelope(
-                start=state.driver_point,
-                end=state.input_endpoint,
-                radius_mm=14.0,
-            ),
-        ),
-        CollisionItem(
-            id="tie_rod",
-            envelope=CapsuleEnvelope(
-                start=state.output_endpoint,
-                end=state.steering_endpoint,
-                radius_mm=14.0,
-            ),
-        ),
-        CollisionItem(
-            id="steering_arm",
-            envelope=CapsuleEnvelope(
-                start=spec.steering_pivot,
-                end=state.steering_endpoint,
-                radius_mm=14.0,
-            ),
-        ),
-        CollisionItem(
-            id="bell_crank_pivot",
-            envelope=CircleEnvelope(
-                center=spec.bell_crank_pivot,
-                radius_mm=28.0,
-            ),
-        ),
-        CollisionItem(
-            id="steering_pivot",
-            envelope=CircleEnvelope(
-                center=spec.steering_pivot,
-                radius_mm=28.0,
-            ),
-        ),
-    ]
-    axle_sources = (
-        (
-            ("front_axle", Point2D(2180.0, 0.0), 1250.0),
-            ("rear_axle", Point2D(-2180.0, 0.0), 1250.0),
-        )
-        if vehicle is None
-        else tuple(
-            (axle.id, axle.center, axle.track_mm / 2.0)
-            for axle in vehicle.axles
-        )
-    )
-    for axle_id, center, half_track in axle_sources:
-        beam_id = f"{axle_id}_beam"
-        items.append(
-            CollisionItem(
-                id=beam_id,
-                envelope=CapsuleEnvelope(
-                    start=Point2D(center.x_mm, center.y_mm - half_track),
-                    end=Point2D(center.x_mm, center.y_mm + half_track),
-                    radius_mm=70.0,
-                ),
-            )
-        )
-        if vehicle is not None:
-            axle = next(item for item in vehicle.axles if item.id == axle_id)
-            if axle.outside_diameter_mm > 0.0:
-                for wheel in axle.wheels():
-                    items.append(
-                        CollisionItem(
-                            id=f"{wheel.id}_tire",
-                            envelope=CircleEnvelope(
-                                center=wheel.center,
-                                radius_mm=axle.outside_diameter_mm / 2.0,
-                            ),
-                            excluded_pair_ids=(beam_id,),
-                        )
-                    )
-    if state.companion_steering_endpoint is not None and spec.companion_steering_pivot is not None:
-        items.extend(
-            (
-                CollisionItem(
-                    id="companion_tie_rod",
-                    envelope=CapsuleEnvelope(
-                        start=state.steering_endpoint,
-                        end=state.companion_steering_endpoint,
-                        radius_mm=14.0,
-                    ),
-                ),
-                CollisionItem(
-                    id="companion_steering_arm",
-                    envelope=CapsuleEnvelope(
-                        start=spec.companion_steering_pivot,
-                        end=state.companion_steering_endpoint,
-                        radius_mm=14.0,
-                    ),
-                ),
-            )
-        )
-    return tuple(items)
+    return build_linkage_clearance_items(spec, state, vehicle=vehicle)
 
 
 def _evaluate_candidate(
@@ -397,6 +310,8 @@ def _evaluate_candidate(
                 failure_index=failure_index,
                 solved_samples=len(sweep.states),
                 sample_count=len(beta_samples_deg),
+                feasible=False,
+                violations=("MECHANISM_UNSOLVED",),
             ),
             (),
         )
@@ -407,7 +322,8 @@ def _evaluate_candidate(
     synchronization_errors_deg: list[float] = []
     clearance_values: list[tuple[float, float]] = []
     penalty = 0.0
-    clearance_failure_index: int | None = None
+    constraint_failure_index: int | None = None
+    violations: set[str] = set()
 
     sample_weights = problem.sample_weights or _sample_weights(beta_samples_deg)
     if len(sample_weights) != len(beta_samples_deg):
@@ -436,6 +352,8 @@ def _evaluate_candidate(
                         failure_index=sample_index,
                         solved_samples=sample_index,
                         sample_count=len(beta_samples_deg),
+                        feasible=False,
+                        violations=("IDEAL_STEERING_UNSOLVED",),
                     ),
                     tuple(errors_deg),
                 )
@@ -458,6 +376,8 @@ def _evaluate_candidate(
                     failure_index=sample_index,
                     solved_samples=sample_index,
                     sample_count=len(beta_samples_deg),
+                    feasible=False,
+                    violations=("ACTUAL_STEERING_UNSOLVED",),
                 ),
                 tuple(errors_deg),
             )
@@ -465,10 +385,13 @@ def _evaluate_candidate(
         sample_errors = tuple(sample_error_map.values())
         errors_deg.extend(sample_errors)
         for axle in actual_solution.axles:
-            if axle.left_wheel.wheel_id in sample_error_map:
-                inner_errors_deg.append(sample_error_map[axle.left_wheel.wheel_id])
-            if axle.right_wheel.wheel_id in sample_error_map:
-                outer_errors_deg.append(sample_error_map[axle.right_wheel.wheel_id])
+            for wheel in axle.wheel_solutions:
+                if wheel.wheel_id not in sample_error_map:
+                    continue
+                if wheel.side == "left":
+                    inner_errors_deg.append(sample_error_map[wheel.wheel_id])
+                else:
+                    outer_errors_deg.append(sample_error_map[wheel.wheel_id])
         comparison = compare_actual_to_ideal(
             actual_solution,
             ideal_solution,
@@ -487,14 +410,23 @@ def _evaluate_candidate(
             _clearance_items_for_state(problem.base_rig, spec, state, vehicle=ideal_vehicle)
         )
         clearance_mm = clearance_report.minimum_clearance_mm
-        if clearance_mm is not None:
+        if clearance_mm is None:
+            violations.add("CLEARANCE_NOT_EVALUATED")
+            if constraint_failure_index is None:
+                constraint_failure_index = sample_index
+        else:
             clearance_values.append((clearance_mm, beta_deg))
             if clearance_mm < problem.clearance_target_mm:
+                violations.add("MIN_CLEARANCE_VIOLATED")
+                if constraint_failure_index is None:
+                    constraint_failure_index = sample_index
                 clearance_gap = problem.clearance_target_mm - clearance_mm
                 penalty += problem.weights.clearance * clearance_gap
                 penalty += problem.weights.clearance_violation * clearance_gap ** 2
-            if clearance_report.collision_detected and clearance_failure_index is None:
-                clearance_failure_index = sample_index
+            if clearance_report.collision_detected:
+                violations.add("COLLISION_DETECTED")
+                if constraint_failure_index is None:
+                    constraint_failure_index = sample_index
                 penalty += problem.weights.failure * (1.0 + sample_index)
 
         penalty += problem.weights.steering_error * sample_weight * sum(error ** 2 for error in sample_errors)
@@ -532,9 +464,11 @@ def _evaluate_candidate(
             mean_abs_error_deg=mean_abs_error_deg,
             max_abs_error_deg=max_abs_error_deg,
             minimum_clearance_mm=minimum_clearance_mm,
-            failure_index=clearance_failure_index,
-            solved_samples=len(errors_deg),
+            failure_index=constraint_failure_index,
+            solved_samples=len(beta_samples_deg),
             sample_count=len(beta_samples_deg),
+            feasible=not violations,
+            violations=tuple(sorted(violations)),
             minimum_clearance_beta_deg=minimum_clearance_beta_deg,
             max_abs_inner_error_deg=max(abs(error) for error in inner_errors_deg),
             max_abs_outer_error_deg=max(abs(error) for error in outer_errors_deg),
@@ -592,7 +526,11 @@ def _sample_random_candidate(
     return candidate
 
 
-def optimize_linkage_problem(problem: LinkageOptimizationProblem) -> OptimizationResult:
+def optimize_linkage_problem(
+    problem: LinkageOptimizationProblem,
+    *,
+    require_feasible: bool = True,
+) -> OptimizationResult:
     rng = random.Random(problem.seed)
     baseline_values = _initial_values(problem)
     baseline_metrics, _ = _evaluate_candidate(problem, baseline_values)
@@ -603,6 +541,12 @@ def optimize_linkage_problem(problem: LinkageOptimizationProblem) -> Optimizatio
 
     enabled_variables = [variable for variable in problem.variables if variable.enabled]
     if not enabled_variables:
+        if require_feasible and not baseline_metrics.feasible:
+            raise OptimizationNoFeasibleSolutionError(
+                baseline_metrics.violations,
+                minimum_clearance_mm=baseline_metrics.minimum_clearance_mm,
+                clearance_target_mm=problem.clearance_target_mm,
+            )
         optimized_variables = tuple(
             OptimizedVariable(
                 id=variable.id,
@@ -638,7 +582,7 @@ def optimize_linkage_problem(problem: LinkageOptimizationProblem) -> Optimizatio
         candidate_values = _sample_random_candidate(rng, problem, best_values, step_sizes)
         metrics, _ = _evaluate_candidate(problem, candidate_values)
         evaluations += 1
-        if metrics.score < best_metrics.score:
+        if _metrics_better(metrics, best_metrics):
             best_values = candidate_values
             best_metrics = metrics
 
@@ -667,7 +611,7 @@ def optimize_linkage_problem(problem: LinkageOptimizationProblem) -> Optimizatio
                 candidate_values[variable.id] = variable.clamp(proposal_value)
                 metrics, _ = _evaluate_candidate(problem, candidate_values)
                 evaluations += 1
-                if metrics.score + 1e-12 < best_metrics.score:
+                if _metrics_better(metrics, best_metrics):
                     best_values = candidate_values
                     best_metrics = metrics
                     improved = True
@@ -680,6 +624,13 @@ def optimize_linkage_problem(problem: LinkageOptimizationProblem) -> Optimizatio
         else:
             for variable in enabled_variables:
                 step_sizes[variable.id] *= 0.88
+
+    if require_feasible and not best_metrics.feasible:
+        raise OptimizationNoFeasibleSolutionError(
+            best_metrics.violations,
+            minimum_clearance_mm=best_metrics.minimum_clearance_mm,
+            clearance_target_mm=problem.clearance_target_mm,
+        )
 
     optimized_variables = tuple(
         OptimizedVariable(

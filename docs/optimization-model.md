@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Search over selected linkage dimensions to reduce steering error while respecting fixed rod lengths, clearance constraints, and branch continuity.
+Search over selected linkage dimensions or bounded graph driver/mapping
+parameters to reduce steering error while respecting fixed rod lengths,
+clearance constraints, and branch continuity.
 
 ## Inputs
 
@@ -16,7 +18,7 @@ Search over selected linkage dimensions to reduce steering error while respectin
 
 ## Variables
 
-The optimizer currently supports scalar variables with:
+The legacy optimizer supports scalar linkage variables with:
 
 - `id`
 - `current`
@@ -58,3 +60,13 @@ The current implementation uses a deterministic pure-Python coordinate search wi
 - quick/full iteration presets
 
 This keeps the optimizer dependency-free for the current repo while preserving the future ability to swap in SciPy-based solvers later.
+
+## Graph optimization
+
+`graph_optimization.py` provides a separate bounded search for an articulated
+`VehicleCombination` and `PlanarMechanismGraph`. It can tune driver input ratios,
+driver phase offsets, wheel-assignment ratios, and wheel-assignment phase
+offsets. Every candidate is solved over the configured articulation samples;
+mechanism errors, steering stops, body/link/wheel collisions, and minimum
+clearance are hard feasibility constraints. It does not alter graph topology or
+CAD geometry, and a failed candidate cannot be applied as a revision.

@@ -3,10 +3,15 @@ from __future__ import annotations
 import math
 import unittest
 
-from easytowing.actual_steering import compare_actual_to_ideal, solve_actual_steering
+from easytowing.actual_steering import (
+    compare_actual_to_ideal,
+    solve_actual_steering,
+    solve_actual_steering_from_graph,
+)
 from easytowing.errors import SteeringLimitExceededError
 from easytowing.geometry import Point2D
 from easytowing.linkage import PlanarLinkageState
+from easytowing.mechanism_graph import MechanismGraphState, MechanismSteeringAssignment
 from easytowing.model import Axle, SteeringSynchronization, SteeringTargetPoint, VehicleLayout
 from easytowing.steering import solve_ideal_steering_from_radius
 
@@ -77,6 +82,82 @@ class ActualSteeringTests(unittest.TestCase):
         )
         self.assertEqual(set(comparison["synchronization_errors_deg"]), {"middle_ratio", "rear_opposite"})
         self.assertGreater(comparison["max_abs_synchronization_error_deg"], 0.0)
+
+    def test_multi_wheel_axle_applies_wheel_end_commands_to_every_tire(self) -> None:
+        vehicle = VehicleLayout(
+            id="dual_wheel_actual",
+            name="Dual wheel actual steering test",
+            axles=(
+                Axle(
+                    id="front",
+                    center=Point2D(1000.0, 0.0),
+                    track_mm=2800.0,
+                    wheel_count=4,
+                    wheel_lateral_offsets_mm=(1400.0, 1180.0, -1180.0, -1400.0),
+                ),
+            ),
+            body_length_mm=3000.0,
+            body_width_mm=3400.0,
+        )
+
+        actual = solve_actual_steering(
+            vehicle,
+            make_linkage_state(10.0, 12.0),
+            math.radians(10.0),
+        )
+
+        self.assertEqual(len(actual.axles[0].wheel_solutions), 4)
+        angles = actual.wheel_steering_angles_deg()
+        self.assertEqual(set(angles), {
+            "front_left_1",
+            "front_left_2",
+            "front_right_1",
+            "front_right_2",
+        })
+        self.assertTrue(all(math.isclose(angles[wheel_id], 10.0, abs_tol=1e-9) for wheel_id in ("front_left_1", "front_left_2")))
+        self.assertTrue(all(math.isclose(angles[wheel_id], 12.0, abs_tol=1e-9) for wheel_id in ("front_right_1", "front_right_2")))
+
+    def test_graph_steering_applies_one_output_to_each_multi_wheel_end(self) -> None:
+        vehicle = VehicleLayout(
+            id="dual_wheel_graph",
+            name="Dual wheel graph steering test",
+            axles=(
+                Axle(
+                    id="front",
+                    center=Point2D(1000.0, 0.0),
+                    track_mm=2800.0,
+                    wheel_count=4,
+                    wheel_lateral_offsets_mm=(1400.0, 1180.0, -1180.0, -1400.0),
+                ),
+            ),
+            body_length_mm=3000.0,
+            body_width_mm=3400.0,
+        )
+        graph_state = MechanismGraphState(
+            point_positions={},
+            member_residuals_mm={},
+            output_angles_rad={
+                "left_output": math.radians(10.0),
+                "right_output": math.radians(12.0),
+            },
+            iterations=0,
+        )
+        assignments = tuple(
+            MechanismSteeringAssignment(output_id, wheel_id)
+            for output_id, wheel_id in (
+                ("left_output", "front_left_1"),
+                ("left_output", "front_left_2"),
+                ("right_output", "front_right_1"),
+                ("right_output", "front_right_2"),
+            )
+        )
+
+        actual = solve_actual_steering_from_graph(vehicle, graph_state, assignments)
+
+        self.assertEqual(len(actual.axles[0].wheel_solutions), 4)
+        self.assertAlmostEqual(actual.axle_center_steering_angles_deg()["front"], 11.0)
+        self.assertTrue(all(math.isclose(angle, 10.0, abs_tol=1e-9) for wheel_id, angle in actual.wheel_steering_angles_deg().items() if "left" in wheel_id))
+        self.assertTrue(all(math.isclose(angle, 12.0, abs_tol=1e-9) for wheel_id, angle in actual.wheel_steering_angles_deg().items() if "right" in wheel_id))
 
     def test_independent_target_is_interpolated(self) -> None:
         vehicle = self.make_vehicle(

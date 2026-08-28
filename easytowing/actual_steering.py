@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from .errors import InvalidGeometryError, SteeringLimitExceededError
 from .geometry import Point2D, normalize_angle
 from .linkage import PlanarLinkageState
+from .mechanism_graph import MechanismGraphState, MechanismSteeringAssignment
 from .model import Axle, SteeringSynchronization, VehicleLayout
 
 if TYPE_CHECKING:
@@ -43,6 +44,13 @@ class ActualAxleSteering:
     right_wheel: ActualWheelSteering
     source: str
     synchronization_mode: str | None
+    wheels: tuple[ActualWheelSteering, ...] = ()
+
+    @property
+    def wheel_solutions(self) -> tuple[ActualWheelSteering, ...]:
+        """Return every wheel, including legacy left/right compatibility fields."""
+
+        return self.wheels or (self.left_wheel, self.right_wheel)
 
     @property
     def center_heading_deg(self) -> float:
@@ -205,14 +213,7 @@ def solve_actual_steering(
     for axle in vehicle.axles:
         center_angle_rad = resolve_center(axle.id)
         wheels = axle.wheels()
-        if axle.id == primary_axle_id:
-            left_angle_rad = primary_left_rad
-            right_angle_rad = primary_right_rad
-            wheel_source = source_cache[axle.id]
-        else:
-            left_angle_rad = center_angle_rad
-            right_angle_rad = center_angle_rad
-            wheel_source = source_cache[axle.id]
+        wheel_source = source_cache[axle.id]
         limits = [
             limit
             for limit in (axle.maximum_steering_angle_deg, axle.steering_stop_deg)
@@ -220,29 +221,28 @@ def solve_actual_steering(
         ]
         if limits:
             limit_deg = min(abs(limit) for limit in limits)
-            for angle_rad in (left_angle_rad, right_angle_rad):
+        actual_wheels: list[ActualWheelSteering] = []
+        for wheel in wheels:
+            angle_rad = (
+                primary_left_rad if wheel.side == "left" else primary_right_rad
+            ) if axle.id == primary_axle_id else center_angle_rad
+            if limits:
                 angle_deg = math.degrees(angle_rad)
                 if abs(angle_deg) > limit_deg + 1e-9:
                     raise SteeringLimitExceededError(angle_deg, limit_deg)
-        left_wheel, right_wheel = wheels
-        actual_left = ActualWheelSteering(
-            wheel_id=left_wheel.id,
-            axle_id=axle.id,
-            side=left_wheel.side,
-            center=left_wheel.center,
-            heading_rad=axle.heading_rad + left_angle_rad,
-            steering_angle_rad=left_angle_rad,
-            source=wheel_source,
-        )
-        actual_right = ActualWheelSteering(
-            wheel_id=right_wheel.id,
-            axle_id=axle.id,
-            side=right_wheel.side,
-            center=right_wheel.center,
-            heading_rad=axle.heading_rad + right_angle_rad,
-            steering_angle_rad=right_angle_rad,
-            source=wheel_source,
-        )
+            actual_wheels.append(
+                ActualWheelSteering(
+                    wheel_id=wheel.id,
+                    axle_id=axle.id,
+                    side=wheel.side,
+                    center=wheel.center,
+                    heading_rad=axle.heading_rad + angle_rad,
+                    steering_angle_rad=angle_rad,
+                    source=wheel_source,
+                )
+            )
+        actual_left = next(wheel for wheel in actual_wheels if wheel.side == "left")
+        actual_right = next(wheel for wheel in actual_wheels if wheel.side == "right")
         axle_solution = ActualAxleSteering(
             axle_id=axle.id,
             center=axle.center,
@@ -252,11 +252,12 @@ def solve_actual_steering(
             right_wheel=actual_right,
             source=wheel_source,
             synchronization_mode=sync_by_axle.get(axle.id).mode if axle.id in sync_by_axle else None,
+            wheels=tuple(actual_wheels),
         )
         actual_axles.append(axle_solution)
         axle_center_angles_rad[axle.id] = center_angle_rad
-        wheel_angles_rad[actual_left.wheel_id] = actual_left.steering_angle_rad
-        wheel_angles_rad[actual_right.wheel_id] = actual_right.steering_angle_rad
+        for wheel in actual_wheels:
+            wheel_angles_rad[wheel.wheel_id] = wheel.steering_angle_rad
 
     synchronization_target_angles_rad: dict[str, float] = {}
     synchronization_errors_rad: dict[str, float] = {}
@@ -285,6 +286,116 @@ def solve_actual_steering(
     )
 
 
+def solve_actual_steering_from_graph(
+    vehicle: VehicleLayout,
+    graph_state: MechanismGraphState,
+    assignments: tuple[MechanismSteeringAssignment, ...],
+) -> ActualSteeringSolution:
+    """Map named mechanism outputs to named wheels without positional assumptions."""
+
+    wheel_by_id = {
+        wheel.id: wheel
+        for axle in vehicle.axles
+        for wheel in axle.wheels()
+    }
+    axle_by_wheel = {
+        wheel.id: axle
+        for axle in vehicle.axles
+        for wheel in axle.wheels()
+    }
+    assignment_by_wheel: dict[str, MechanismSteeringAssignment] = {}
+    for assignment in assignments:
+        if assignment.output_id not in graph_state.output_angles_rad:
+            raise InvalidGeometryError(
+                f"Mechanism assignment references unknown output {assignment.output_id!r}."
+            )
+        if assignment.wheel_id not in wheel_by_id:
+            raise InvalidGeometryError(
+                f"Mechanism assignment references unknown wheel {assignment.wheel_id!r}."
+            )
+        if assignment.wheel_id in assignment_by_wheel:
+            raise InvalidGeometryError(
+                f"Wheel {assignment.wheel_id!r} has multiple mechanism assignments."
+            )
+        axle = axle_by_wheel[assignment.wheel_id]
+        if not axle.steerable or axle.steering_mode == "FIXED":
+            raise InvalidGeometryError(
+                f"Fixed wheel {assignment.wheel_id!r} cannot receive a mechanism output."
+            )
+        assignment_by_wheel[assignment.wheel_id] = assignment
+
+    actual_axles: list[ActualAxleSteering] = []
+    wheel_angles_rad: dict[str, float] = {}
+    axle_center_angles_rad: dict[str, float] = {}
+    for axle in vehicle.axles:
+        wheel_solutions: list[ActualWheelSteering] = []
+        for wheel in axle.wheels():
+            assignment = assignment_by_wheel.get(wheel.id)
+            if not axle.steerable or axle.steering_mode == "FIXED":
+                angle_rad = 0.0
+                source = "fixed"
+            elif assignment is None:
+                raise InvalidGeometryError(
+                    f"Steerable wheel {wheel.id!r} has no mechanism output assignment."
+                )
+            else:
+                angle_rad = normalize_angle(
+                    assignment.ratio * graph_state.output_angles_rad[assignment.output_id]
+                    + assignment.phase_offset_rad
+                )
+                source = f"mechanism_graph:{assignment.output_id}"
+
+            limits = [
+                limit
+                for limit in (axle.maximum_steering_angle_deg, axle.steering_stop_deg)
+                if limit is not None
+            ]
+            if limits:
+                limit_deg = min(abs(limit) for limit in limits)
+                angle_deg = math.degrees(angle_rad)
+                if abs(angle_deg) > limit_deg + 1e-9:
+                    raise SteeringLimitExceededError(angle_deg, limit_deg)
+
+            wheel_solutions.append(
+                ActualWheelSteering(
+                    wheel_id=wheel.id,
+                    axle_id=axle.id,
+                    side=wheel.side,
+                    center=wheel.center,
+                    heading_rad=normalize_angle(axle.heading_rad + angle_rad),
+                    steering_angle_rad=angle_rad,
+                    source=source,
+                )
+            )
+            wheel_angles_rad[wheel.id] = angle_rad
+
+        left_actual = next(wheel for wheel in wheel_solutions if wheel.side == "left")
+        right_actual = next(wheel for wheel in wheel_solutions if wheel.side == "right")
+        center_angle_rad = normalize_angle(
+            sum(wheel.steering_angle_rad for wheel in wheel_solutions) / len(wheel_solutions)
+        )
+        axle_center_angles_rad[axle.id] = center_angle_rad
+        actual_axles.append(
+            ActualAxleSteering(
+                axle_id=axle.id,
+                center=axle.center,
+                center_heading_rad=normalize_angle(axle.heading_rad + center_angle_rad),
+                center_steering_angle_rad=center_angle_rad,
+                left_wheel=left_actual,
+                right_wheel=right_actual,
+                source="mechanism_graph",
+                synchronization_mode="LINKED_MECHANICALLY",
+                wheels=tuple(wheel_solutions),
+            )
+        )
+
+    return ActualSteeringSolution(
+        axles=tuple(actual_axles),
+        wheel_angles_rad=wheel_angles_rad,
+        axle_center_angles_rad=axle_center_angles_rad,
+    )
+
+
 def actual_steering_errors_deg(
     actual: ActualSteeringSolution,
     ideal: IdealSteeringSolution,
@@ -309,10 +420,8 @@ def compare_actual_to_ideal(
     left_errors: list[float] = []
     right_errors: list[float] = []
     for axle in actual.axles:
-        for wheel, bucket in (
-            (axle.left_wheel, left_errors),
-            (axle.right_wheel, right_errors),
-        ):
+        for wheel in axle.wheel_solutions:
+            bucket = left_errors if wheel.side == "left" else right_errors
             if wheel.wheel_id in ideal_wheel_angles:
                 bucket.append(errors_deg[wheel.wheel_id])
     all_errors = list(errors_deg.values())
@@ -450,6 +559,19 @@ def serialize_actual_steering(
                     "steering_angle_deg": axle.right_wheel.steering_angle_deg,
                     "source": axle.right_wheel.source,
                 },
+                "wheels": [
+                    {
+                        "wheel_id": wheel.wheel_id,
+                        "side": wheel.side,
+                        "center": {"x_mm": wheel.center.x_mm, "y_mm": wheel.center.y_mm},
+                        "heading_rad": wheel.heading_rad,
+                        "heading_deg": wheel.heading_deg,
+                        "steering_angle_rad": wheel.steering_angle_rad,
+                        "steering_angle_deg": wheel.steering_angle_deg,
+                        "source": wheel.source,
+                    }
+                    for wheel in axle.wheel_solutions
+                ],
             }
             for axle in actual.axles
         ],

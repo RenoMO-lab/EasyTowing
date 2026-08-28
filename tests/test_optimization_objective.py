@@ -22,15 +22,14 @@ class OptimizationObjectiveTests(unittest.TestCase):
         )
         problem = build_reference_optimization_problem(
             mode="quick",
-            enabled_ids={"steering_arm_length_mm"},
-            clearance_target_mm=35.0,
+            clearance_target_mm=15.0,
             weights=weights,
         )
 
-        self.assertEqual(problem.clearance_target_mm, 35.0)
+        self.assertEqual(problem.clearance_target_mm, 15.0)
         self.assertIs(problem.weights, weights)
         result = optimize_linkage_problem(problem)
-        self.assertEqual(result.clearance_target_mm, 35.0)
+        self.assertEqual(result.clearance_target_mm, 15.0)
         self.assertIs(result.weights, weights)
         self.assertEqual(result.weights.to_dict()["synchronization_error"], 0.9)
 

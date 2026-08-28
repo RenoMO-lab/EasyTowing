@@ -11,15 +11,25 @@ Current status:
 - The browser linkage editor feeds live kinematics, optimization, project snapshots, and engineering exports.
 - Steering-curve sweep preview shows ideal and actual linkage response across the full articulation range.
 - Swept-path preview and PDF engineering reports are available from the browser export links.
-- Manual DXF import assignment and parametric reconstruction are available from the browser.
-- Body-chain primitives are in place for future multi-trailer coordination; the current rigid-link solver is not yet a generalized multi-axle tie-rod network.
+- Reviewed DXF import assignment and parametric reconstruction are available from the browser; activation requires explicit source units and CAD axis-frame confirmation, and unsupported entities block activation.
+- Confirmed DXF source bytes can be retained against a saved revision when durable artifact storage is configured; the source hash is checked before retention.
+- Articulated body combinations and a generalized planar mechanism graph are available for explicit multi-body steering studies, including per-joint physical articulation stops and Cartesian sweep validation.
+- Explicit multi-wheel axle assemblies are supported when each lateral wheel position is supplied; the standard two-wheel case retains conventional left/right defaults.
+- Multi-body revisions retain explicit steering coordination channels and export dimensioned diagnostic geometry as SVG, ASCII DXF, and PNG alongside JSON, CSV, and PDF evidence.
 - Persistent project state is stored in `.easytowing-state/projects.json`.
+- SaaS control-plane primitives cover authenticated sessions, tenant/role checks, assigned approvals, asynchronous jobs, audit events, and PostgreSQL schema/backup operations; local mode remains JSON/in-memory while database mode is enabled with `EASYTOWING_DATABASE_URL`.
+- Runtime health exposes separate liveness (`/api/health`) and dependency readiness (`/api/ready`) checks; PostgreSQL deployments can require a fresh worker heartbeat with `EASYTOWING_REQUIRE_WORKER=1`.
+- Multi-body revision exports are diagnostic by default; a controlled release manifest is available only after engineering PASS, Monroc acceptance, and independent approval. SVG/DXF/PNG do not constitute a controlled CAD release package.
+- Monroc acceptance evaluations remain diagnostic unless their exact criteria match a protected approved profile configured with `EASYTOWING_MONROC_ACCEPTANCE_PROFILES_JSON`.
+- Controlled release delivery metadata is recorded with an artifact ID and SHA-256. Set `EASYTOWING_ARTIFACT_STORAGE_DIR` for atomic filesystem retention and authenticated artifact downloads; production cloud object storage is still a deployment adapter to add.
 - Analytical tests cover steering, linkage, collision, optimization, reporting, and project storage.
 
 Remaining planned extensions:
 
-- full multi-trailer coordination
-- generalized multi-axle mechanical linkage networks
+- validation of chained multi-trailer coordination against Monroc references
+- CAD-grade shared-network topology and geometry editing
+- production deployment wiring, object storage, and executed backup-restore drills
+- Monroc-approved acceptance thresholds and pilot validation against real CAD
 
 ## Local run
 

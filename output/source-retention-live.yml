@@ -1,0 +1,308 @@
+- generic [ref=f2e2]:
+  - banner [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - paragraph [ref=f2e5]: Monroc Design Engineering
+      - heading "EasyTowing Steering Workspace" [level=1] [ref=f2e6]
+    - generic [ref=f2e7]:
+      - generic [ref=f2e8]: Mode
+      - strong [ref=f2e9]: Simulation
+  - main [ref=f2e10]:
+    - navigation "Engineering workflow" [ref=f2e11]:
+      - button "Project EDITING" [ref=f2e297] [cursor=pointer]:
+        - generic [ref=f2e13]: "01"
+        - strong [ref=f2e14]: Project
+        - generic [ref=f2e15]: Open or revise
+        - text: EDITING
+      - button "Vehicle READY" [ref=f2e16] [cursor=pointer]:
+        - generic [ref=f2e17]: "02"
+        - strong [ref=f2e18]: Vehicle
+        - generic [ref=f2e19]: Bodies and axles
+        - text: READY
+      - button "Maneuver TODO" [ref=f2e298] [cursor=pointer]:
+        - generic [ref=f2e21]: "03"
+        - strong [ref=f2e22]: Maneuver
+        - generic [ref=f2e23]: Radius and motion
+        - text: TODO
+      - button "Mechanism TODO" [ref=f2e24] [cursor=pointer]:
+        - generic [ref=f2e25]: "04"
+        - strong [ref=f2e26]: Mechanism
+        - generic [ref=f2e27]: Links and pivots
+        - text: TODO
+      - button "Validate WAIT" [ref=f2e299] [cursor=pointer]:
+        - generic [ref=f2e29]: "05"
+        - strong [ref=f2e30]: Validate
+        - generic [ref=f2e31]: Errors and clearance
+        - text: WAIT
+      - button "Optimize OPTIONAL" [ref=f2e32] [cursor=pointer]:
+        - generic [ref=f2e33]: "06"
+        - strong [ref=f2e34]: Optimize
+        - generic [ref=f2e35]: Constrained search
+        - text: OPTIONAL
+      - button "Results WAIT" [ref=f2e300] [cursor=pointer]:
+        - generic [ref=f2e37]: "07"
+        - strong [ref=f2e38]: Results
+        - generic [ref=f2e39]: Review and export
+        - text: WAIT
+    - generic [ref=f2e40]:
+      - generic [ref=f2e41]:
+        - generic [ref=f2e42]:
+          - heading "Top-view kinematics" [level=2] [ref=f2e43]
+          - paragraph [ref=f2e44]: Live articulation, linkage, and clearance over the ideal steering core.
+        - generic [ref=f2e45]:
+          - combobox "Display mode" [ref=f2e46]:
+            - option "Simulation" [selected]
+            - option "Clearance focus"
+            - option "Steering rays"
+            - option "Error focus"
+            - option "Dimensioned sketch"
+            - option "Optimized design"
+          - button "Edit axle layout" [ref=f2e47] [cursor=pointer]
+          - generic [ref=f2e48]: Live view
+      - img "Ideal steering diagram" [ref=f2e50]
+    - complementary [ref=f2e97]:
+      - generic [ref=f2e98]:
+        - text: Step 02
+        - heading "Vehicle" [level=2] [ref=f2e175]
+        - paragraph [ref=f2e100]: Define the rigid bodies, articulation joints, mounted axles, and packaging geometry.
+      - generic [ref=f2e101]:
+        - paragraph [ref=f2e102]: Decision path
+        - heading "Define, solve, prove, review" [level=3] [ref=f2e103]
+        - paragraph [ref=f2e104]:
+          - strong [ref=f2e105]: "The engineering question:"
+          - text: does this defined towing-axis mechanism steer every mapped wheel correctly and remain physically feasible across the selected articulation range?
+        - list [ref=f2e106]:
+          - listitem [ref=f2e107]:
+            - strong [ref=f2e108]: "Define:"
+            - text: bodies, axles, pivots, links, and wheel mappings.
+          - listitem [ref=f2e109]:
+            - strong [ref=f2e110]: "Solve:"
+            - text: compute the common maneuver geometry and mechanism pose.
+          - listitem [ref=f2e111]:
+            - strong [ref=f2e112]: "Prove:"
+            - text: check closure, steering, collision, and clearance at every pose.
+          - listitem [ref=f2e113]:
+            - strong [ref=f2e114]: "Review:"
+            - text: save the evidence, compare the proposal, then submit it for independent approval.
+        - generic [ref=f2e115]:
+          - strong [ref=f2e116]: What the result contains
+          - paragraph [ref=f2e117]: Actual versus ideal wheel angles, mechanism residuals, collision and clearance findings, full-range evidence, and a traceable project revision.
+        - paragraph [ref=f2e118]:
+          - strong [ref=f2e119]: PASS
+          - text: means the configured hard checks pass.
+          - strong [ref=f2e120]: FAIL
+          - text: means diagnostic evidence only, never a manufacturing release.
+        - generic [ref=f2e121]:
+          - paragraph [ref=f2e122]: Next action
+          - strong [ref=f2e123]: Resolve the maneuver
+          - paragraph [ref=f2e124]: Set the signed root turn radius and calculate the current articulated pose.
+          - button "Go to Maneuver" [ref=f2e306] [cursor=pointer]
+      - group [ref=f2e176]:
+        - 'generic "Advanced: legacy single-layout axle study" [ref=f2e177] [cursor=pointer]'
+        - option "FIXED"
+        - option "FORCED STEER"
+        - option "SELF STEER"
+        - option "USER DEFINED" [selected]
+        - option "SAME PHASE" [selected]
+        - option "OPPOSITE PHASE"
+        - option "RATIO"
+        - option "LINKED MECHANICALLY"
+        - option "INDEPENDENT TARGET"
+        - option "Primary linkage" [selected]
+      - generic [ref=f2e178]:
+        - generic [ref=f2e180]:
+          - paragraph [ref=f2e181]: Multi-body model
+          - heading "Vehicle combination" [level=3] [ref=f2e182]
+        - paragraph [ref=f2e183]: Define every rigid body, articulation joint, and mounted axle. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Continue to Maneuver when the physical combination is complete.
+        - generic [ref=f2e185]:
+          - text: Body count
+          - spinbutton "Body count" [ref=f2e186]: "2"
+        - generic [ref=f2e187]:
+          - group [ref=f2e188]:
+            - generic "Rear Body / root 1 axle / rectangular envelope" [ref=f2e189] [cursor=pointer]:
+              - strong [ref=f2e190]: Rear Body / root
+              - generic [ref=f2e191]: 1 axle / rectangular envelope
+            - generic [ref=f2e192]:
+              - generic [ref=f2e193]:
+                - text: Axles
+                - spinbutton "Axles" [ref=f2e194]: "1"
+              - generic [ref=f2e195]:
+                - text: Body name
+                - textbox "Body name" [ref=f2e196]: Rear Body
+              - generic [ref=f2e197]:
+                - text: Length mm
+                - spinbutton "Length mm" [ref=f2e198]: "1800"
+              - generic [ref=f2e199]:
+                - text: Width mm
+                - spinbutton "Width mm" [ref=f2e200]: "3200"
+            - group [ref=f2e201]:
+              - generic "Optional CAD outline" [ref=f2e202] [cursor=pointer]
+            - paragraph [ref=f2e203]: Axle 1
+            - generic [ref=f2e204]:
+              - generic [ref=f2e205]:
+                - text: Local X mm
+                - spinbutton "Local X mm" [ref=f2e206]: "0"
+              - generic [ref=f2e207]:
+                - text: Local Y mm
+                - spinbutton "Local Y mm" [ref=f2e208]: "0"
+              - generic [ref=f2e209]:
+                - text: Track mm
+                - spinbutton "Track mm" [ref=f2e210]: "2500"
+              - generic [ref=f2e211]:
+                - text: Wheel count
+                - spinbutton "Wheel count" [ref=f2e212]: "2"
+              - generic [ref=f2e213]:
+                - text: Tire width mm
+                - spinbutton "Tire width mm" [ref=f2e214]: "0"
+              - generic [ref=f2e215]:
+                - text: Tire OD mm
+                - spinbutton "Tire OD mm" [ref=f2e216]: "0"
+              - generic [ref=f2e217]:
+                - text: Steering mode
+                - combobox "Steering mode" [ref=f2e218]:
+                  - option "FORCED STEER" [selected]
+                  - option "FIXED"
+                  - option "USER DEFINED"
+          - group [ref=f2e219]:
+            - generic "Front Body / child 1 1 axle / rectangular envelope / current 0.0 deg / sweep -45..45 deg / stop +/-45 deg" [ref=f2e220] [cursor=pointer]:
+              - strong [ref=f2e221]: Front Body / child 1
+              - generic [ref=f2e222]: 1 axle / rectangular envelope / current 0.0 deg / sweep -45..45 deg / stop +/-45 deg
+            - option "FORCED STEER" [selected]
+            - option "FIXED"
+            - option "USER DEFINED"
+          - generic [ref=f2e223]:
+            - heading "Steering coordination" [level=4] [ref=f2e224]
+            - paragraph [ref=f2e225]: Define how a target axle follows a source axle. This channel is checked against the ideal steering result.
+            - generic [ref=f2e226]:
+              - strong [ref=f2e227]: rear_to_front_sync
+              - generic [ref=f2e228]:
+                - generic [ref=f2e229]:
+                  - text: Channel ID
+                  - textbox "Channel ID" [ref=f2e230]: rear_to_front_sync
+                - generic [ref=f2e231]:
+                  - text: Target axle
+                  - combobox "Target axle" [ref=f2e232]:
+                    - option "Rear Body / rear_axle" [selected]
+                    - option "Front Body / front_axle"
+                - generic [ref=f2e233]:
+                  - text: Source axle
+                  - combobox "Source axle" [ref=f2e234]:
+                    - option "Rear Body / rear_axle"
+                    - option "Front Body / front_axle" [selected]
+                - generic [ref=f2e235]:
+                  - text: Mode
+                  - combobox "Mode" [ref=f2e236]:
+                    - option "Opposite phase" [selected]
+                    - option "Same phase"
+                    - option "Ratio"
+                    - option "Linked mechanically"
+                - generic [ref=f2e237]:
+                  - text: Ratio
+                  - spinbutton "Ratio" [ref=f2e238]: "1"
+                - generic [ref=f2e239]:
+                  - text: Phase offset deg
+                  - spinbutton "Phase offset deg" [ref=f2e240]: "0"
+              - button "Remove channel" [ref=f2e241]
+            - button "Add synchronization channel" [ref=f2e242]
+      - generic [ref=f2e243]:
+        - heading "DXF import" [level=3] [ref=f2e244]
+        - generic [ref=f2e245]:
+          - button "DXF file" [ref=f2e246]
+          - button "Re-import" [ref=f2e282] [cursor=pointer]
+          - button "Apply assignments" [ref=f2e248] [cursor=pointer]
+        - paragraph [ref=f2e249]: Applied assignments and activated the parametric layout from browser-cad-unit-check.dxf.
+        - generic [ref=f2e250]:
+          - generic [ref=f2e251]:
+            - paragraph [ref=f2e252]: CAD source confirmation
+            - paragraph [ref=f2e253]: "Selected units: in. Axis frame confirmed for model use. DXF header reports in. Source scaling and metadata were applied to the active layout."
+          - generic [ref=f2e254]:
+            - text: Source units
+            - combobox "DXF source units" [ref=f2e255]:
+              - option "Select source units"
+              - option "Millimetres"
+              - option "Centimetres"
+              - option "Metres"
+              - option "Inches" [selected]
+          - generic [ref=f2e256]:
+            - text: CAD axis frame
+            - combobox "DXF CAD axis frame" [ref=f2e257]:
+              - option "Select CAD axis frame"
+              - option "X forward / Y left (Monroc model frame)" [selected]
+              - option "X forward / Y right (mirror Y)"
+              - option "X rearward / Y left (mirror X)"
+              - option "X rearward / Y right (mirror X and Y)"
+          - generic [ref=f2e258]:
+            - paragraph [ref=f2e259]: Revision source file
+            - paragraph [ref=f2e260]: Apply confirmed CAD assignments before retaining the exact source bytes.
+            - button "Retain source on revision" [disabled] [ref=f2e261]
+        - generic [ref=f2e262]:
+          - generic [ref=f2e263]:
+            - generic [ref=f2e264]: Entities
+            - strong [ref=f2e265]: "2"
+          - generic [ref=f2e266]:
+            - generic [ref=f2e267]: Supported
+            - strong [ref=f2e268]: "2"
+          - generic [ref=f2e269]:
+            - generic [ref=f2e270]: Bounds
+            - strong [ref=f2e271]: "-2540.0 mm .. 2540.0 mm / -1270.0 mm .. 1270.0 mm"
+          - generic [ref=f2e272]:
+            - generic [ref=f2e273]: Layout
+            - strong [ref=f2e274]: 5080.0 mm x 2540.0 mm | 1 axles
+          - generic [ref=f2e275]:
+            - generic [ref=f2e276]: Parametric model
+            - strong [ref=f2e277]: 1 components / 2 points
+        - generic [ref=f2e278]:
+          - generic "Manual assignment from DXF import workflow." [ref=f2e307]:
+            - generic [ref=f2e308]:
+              - generic [ref=f2e309]: "#00 LWPOLYLINE / BODY"
+              - generic [ref=f2e310]: LWPOLYLINE 4 vertices closed
+              - generic [ref=f2e311]: "Assigned: Body envelope | Suggested: Body envelope"
+            - 'combobox "Role assignment for #00 LWPOLYLINE / BODY" [ref=f2e313]':
+              - option "Unassigned"
+              - option "Body envelope" [selected]
+              - option "Chassis outline"
+              - option "Axle centerline"
+              - option "Linkage segment"
+              - option "Steering arm"
+              - option "Tie rod"
+              - option "Bell crank"
+              - option "Articulation pivot"
+              - option "Pivot"
+              - option "Wheel marker"
+              - option "ICR marker"
+              - option "Annotation"
+              - option "Reference point"
+              - option "Arc reference"
+              - option "Block reference"
+              - option "Drawbar / frame"
+          - generic "Manual assignment from DXF import workflow." [ref=f2e314]:
+            - generic [ref=f2e315]:
+              - generic [ref=f2e316]: "#01 LINE / AXLE"
+              - generic [ref=f2e317]: LINE layer=AXLE length=2032.0 mm
+              - generic [ref=f2e318]: "Assigned: Axle centerline | Suggested: Axle centerline"
+            - 'combobox "Role assignment for #01 LINE / AXLE" [ref=f2e320]':
+              - option "Unassigned"
+              - option "Body envelope"
+              - option "Chassis outline"
+              - option "Axle centerline" [selected]
+              - option "Linkage segment"
+              - option "Steering arm"
+              - option "Tie rod"
+              - option "Bell crank"
+              - option "Articulation pivot"
+              - option "Pivot"
+              - option "Wheel marker"
+              - option "ICR marker"
+              - option "Annotation"
+              - option "Reference point"
+              - option "Arc reference"
+              - option "Block reference"
+              - option "Drawbar / frame"
+  - generic [ref=f2e167]:
+    - generic [ref=f2e168]:
+      - text: Articulation
+      - generic [ref=f2e169]: 0 deg
+    - slider "Articulation 0 deg" [ref=f2e170]: "0"
+    - generic [ref=f2e171]:
+      - generic [ref=f2e172]: "-45"
+      - generic [ref=f2e173]: "0"
+      - generic [ref=f2e174]: "+45"

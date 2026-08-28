@@ -7,7 +7,7 @@ import json
 import math
 from datetime import datetime
 from functools import lru_cache
-from typing import Iterable
+from typing import Any, Iterable
 from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFont
@@ -17,6 +17,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from .collision import CapsuleEnvelope, CircleEnvelope, CollisionItem, ClearanceReport, PolygonEnvelope, analyze_clearance
+from .clearance_model import build_linkage_clearance_items
 from .actual_steering import (
     ActualSteeringSolution,
     actual_steering_errors_deg,
@@ -25,7 +26,7 @@ from .actual_steering import (
     solve_actual_steering,
 )
 from .design_cases import DesignCase
-from .errors import ArticulationLimitExceededError
+from .errors import ArticulationLimitExceededError, InvalidGeometryError
 from .geometry import Point2D
 from .linkage import (
     LinkageDemoRig,
@@ -135,46 +136,7 @@ def _serialize_envelope(envelope) -> dict[str, object]:
 
 
 def _clearance_items_for_state(vehicle: VehicleLayout, spec: PlanarLinkageSpec, state: PlanarLinkageState) -> tuple[CollisionItem, ...]:
-    items: list[CollisionItem] = [
-        CollisionItem("input_rod", CapsuleEnvelope(state.driver_point, state.input_endpoint, 14.0)),
-        CollisionItem("tie_rod", CapsuleEnvelope(state.output_endpoint, state.steering_endpoint, 14.0)),
-        CollisionItem("steering_arm", CapsuleEnvelope(spec.steering_pivot, state.steering_endpoint, 14.0)),
-        CollisionItem("bell_crank_pivot", CircleEnvelope(spec.bell_crank_pivot, 28.0)),
-        CollisionItem("steering_pivot", CircleEnvelope(spec.steering_pivot, 28.0)),
-    ]
-    if state.companion_steering_endpoint is not None and spec.companion_steering_pivot is not None:
-        items.extend(
-            (
-                CollisionItem(
-                    "companion_tie_rod",
-                    CapsuleEnvelope(state.steering_endpoint, state.companion_steering_endpoint, 14.0),
-                ),
-                CollisionItem(
-                    "companion_steering_arm",
-                    CapsuleEnvelope(spec.companion_steering_pivot, state.companion_steering_endpoint, 14.0),
-                ),
-            )
-        )
-    for axle in vehicle.axles:
-        wheels = axle.wheels()
-        if len(wheels) >= 2:
-            beam_id = f"{axle.id}_beam"
-            items.append(
-                CollisionItem(
-                    beam_id,
-                    CapsuleEnvelope(wheels[0].center, wheels[-1].center, 70.0),
-                )
-            )
-            if axle.outside_diameter_mm > 0.0:
-                for wheel in wheels:
-                    items.append(
-                        CollisionItem(
-                            f"{wheel.id}_tire",
-                            CircleEnvelope(wheel.center, axle.outside_diameter_mm / 2.0),
-                            excluded_pair_ids=(beam_id,),
-                        )
-                    )
-    return tuple(items)
+    return build_linkage_clearance_items(spec, state, vehicle=vehicle)
 
 
 def _build_clearance_report(vehicle: VehicleLayout, spec: PlanarLinkageSpec, state: PlanarLinkageState) -> ClearanceReport:
@@ -246,6 +208,11 @@ def _serialize_vehicle(vehicle: VehicleLayout) -> dict[str, object]:
                 "center": _point_payload(axle.center),
                 "track_mm": axle.track_mm,
                 "wheel_count": axle.wheel_count,
+                "wheel_lateral_offsets_mm": (
+                    None
+                    if axle.wheel_lateral_offsets_mm is None
+                    else list(axle.wheel_lateral_offsets_mm)
+                ),
                 "steerable": axle.steerable,
                 "steering_mode": axle.steering_mode,
                 "heading_rad": axle.heading_rad,
@@ -305,6 +272,11 @@ def _serialize_vehicle_config(vehicle: VehicleLayout) -> dict[str, object]:
                 "y_mm": axle.center.y_mm,
                 "track_mm": axle.track_mm,
                 "wheel_count": axle.wheel_count,
+                "wheel_lateral_offsets_mm": (
+                    None
+                    if axle.wheel_lateral_offsets_mm is None
+                    else list(axle.wheel_lateral_offsets_mm)
+                ),
                 "steerable": axle.steerable,
                 "steering_mode": axle.steering_mode,
                 "heading_rad": axle.heading_rad,
@@ -372,6 +344,8 @@ def _serialize_linkage_state(state: PlanarLinkageState | None) -> dict[str, obje
 def _serialize_optimization_result(result: OptimizationResult) -> dict[str, object]:
     def serialize_metrics(metrics) -> dict[str, object]:
         return {
+            "feasible": metrics.feasible,
+            "violations": list(metrics.violations),
             "score": metrics.score,
             "rms_error_deg": metrics.rms_error_deg,
             "mean_abs_error_deg": metrics.mean_abs_error_deg,
@@ -431,6 +405,7 @@ def build_export_context(
     design_cases: Iterable[DesignCase] | None = None,
     linkage_rig: LinkageDemoRig | None = None,
     vehicle: VehicleLayout | None = None,
+    require_feasible: bool = True,
 ) -> ExportContext:
     provided_vehicle = vehicle
     if vehicle is None:
@@ -466,7 +441,10 @@ def build_export_context(
         base_rig=baseline_rig if linkage_rig is not None else None,
         vehicle=provided_vehicle,
     )
-    optimization_result = optimize_linkage_problem(optimization_problem)
+    optimization_result = optimize_linkage_problem(
+        optimization_problem,
+        require_feasible=require_feasible,
+    )
     optimized_spec = build_optimized_spec(optimization_problem.baseline_spec, optimization_result.optimized_variables)
 
     driver_point = driver_point_arc(
@@ -518,6 +496,7 @@ def build_export_bundle(
     design_cases: Iterable[DesignCase] | None = None,
     linkage_rig: LinkageDemoRig | None = None,
     vehicle: VehicleLayout | None = None,
+    require_feasible: bool = True,
 ) -> dict[str, object]:
     context = build_export_context(
         beta_deg=beta_deg,
@@ -526,6 +505,7 @@ def build_export_bundle(
         design_cases=design_cases,
         linkage_rig=linkage_rig,
         vehicle=vehicle,
+        require_feasible=require_feasible,
     )
     return {
         "beta_deg": context.beta_deg,
@@ -954,13 +934,13 @@ def build_export_dxf(
     entities.extend(_dxf_lwpolyline("BODY", body_points, closed=True))
 
     for axle in context.vehicle.axles:
-        left, right = axle.wheels()
+        left, right = axle.outer_wheels()
         entities.extend(_dxf_line("AXLE", left.center, right.center))
-        entities.extend(_dxf_circle("AXLE", left.center, 45.0))
-        entities.extend(_dxf_circle("AXLE", right.center, 45.0))
+        for wheel in axle.wheels():
+            entities.extend(_dxf_circle("AXLE", wheel.center, 45.0))
 
     for axle in context.ideal_solution.axles:
-        for wheel in [axle.left_wheel, axle.right_wheel]:
+        for wheel in axle.wheel_solutions:
             center = wheel.center
             end = Point2D(
                 center.x_mm + math.cos(wheel.heading_rad) * 900.0,
@@ -1086,9 +1066,9 @@ def build_export_png(
 
     draw.polygon([screen(point) for point in body_points], fill="#0e2a3d", outline="#72e5ff", width=4)
     for axle in context.vehicle.axles:
-        left_wheel, right_wheel = axle.wheels()
+        left_wheel, right_wheel = axle.outer_wheels()
         line(left_wheel.center, right_wheel.center, "#f4b860", 4)
-        for wheel in (left_wheel, right_wheel):
+        for wheel in axle.wheels():
             center_x, center_y = screen(wheel.center)
             radius = max(7, round(55.0 * scale))
             draw.ellipse(
@@ -1102,7 +1082,7 @@ def build_export_png(
             for item in context.ideal_solution.axles
             if item.axle_id == axle.id
         )
-        for wheel in (ideal.left_wheel, ideal.right_wheel):
+        for wheel in ideal.wheel_solutions:
             end = Point2D(
                 wheel.center.x_mm + math.cos(wheel.heading_rad) * 700.0,
                 wheel.center.y_mm + math.sin(wheel.heading_rad) * 700.0,
@@ -1135,7 +1115,7 @@ def build_export_png(
         if icr_in_view:
             draw.ellipse((icr_x - 8, icr_y - 8, icr_x + 8, icr_y + 8), fill="#ff7d7d", outline="#ffffff", width=2)
             for axle in context.ideal_solution.axles:
-                for wheel in (axle.left_wheel, axle.right_wheel):
+                for wheel in axle.wheel_solutions:
                     line(wheel.center, context.ideal_solution.icr, "#ff7d7d", 1)
 
     if len(context.vehicle.axles) >= 2:
@@ -2570,6 +2550,445 @@ def build_export_pdf(
     return output.getvalue()
 
 
+ENGINEERING_FAILURE_GUIDANCE: dict[str, dict[str, str]] = {
+    "MODEL_COMPLETENESS": {
+        "check_id": "MODEL_COMPLETENESS",
+        "title": "Complete the vehicle combination",
+        "action": "Define at least two rigid bodies and provide a positive rectangular envelope or a valid CAD outline for every body before trusting clearance results.",
+    },
+    "KINEMATICS": {
+        "check_id": "KINEMATICS",
+        "title": "Check body and joint geometry",
+        "action": "Verify body dimensions, joint anchors, articulation bounds, and the explicit maneuver radius.",
+    },
+    "MECHANISM": {
+        "check_id": "MECHANISM",
+        "title": "Make the mechanism solvable",
+        "action": "Check rigid member lengths, fixed and driven point positions, branch continuity, and wheel-output mappings.",
+    },
+    "COLLISION": {
+        "check_id": "COLLISION",
+        "title": "Remove component overlap",
+        "action": "Open Clearance focus, inspect the highlighted pair, then move the components or correct their envelopes. Connected joints are excluded; other overlaps are hard failures.",
+    },
+    "CLEARANCE": {
+        "check_id": "CLEARANCE",
+        "title": "Increase minimum clearance",
+        "action": "Move the conflicting pivot or link, or revise the envelope until the configured clearance target is met.",
+    },
+    "STEERING_LIMIT_EXCEEDED": {
+        "check_id": "STEERING_LIMIT_EXCEEDED",
+        "title": "Respect the steering stop",
+        "action": "Change the linkage ratio or geometry, or confirm a larger physical steering stop. Do not treat the rod as an implicit stop.",
+    },
+    "DRAWBAR_LIMIT_EXCEEDED": {
+        "check_id": "DRAWBAR_LIMIT_EXCEEDED",
+        "title": "Respect the articulation stop",
+        "action": "Reduce the requested articulation range or update the approved drawbar limit.",
+    },
+    "MULTIBODY_KINEMATIC_INCONSISTENT": {
+        "check_id": "MULTIBODY_KINEMATIC_INCONSISTENT",
+        "title": "Resolve multi-body closure",
+        "action": "Check joint anchors, body-local coordinates, and the common maneuver radius for the failing body.",
+    },
+    "LINKAGE_NO_SOLUTION": {
+        "check_id": "LINKAGE_NO_SOLUTION",
+        "title": "Check linkage reach",
+        "action": "Adjust link lengths or pivot locations so the fixed-length circles intersect throughout the requested range.",
+    },
+    "LINKAGE_BRANCH_CHANGE": {
+        "check_id": "LINKAGE_BRANCH_CHANGE",
+        "title": "Prevent branch switching",
+        "action": "Check the neutral assembly branch and incremental motion, then redesign near toggle positions.",
+    },
+    "ACTUAL_STEERING_UNSOLVED": {
+        "check_id": "ACTUAL_STEERING_UNSOLVED",
+        "title": "Complete wheel mapping",
+        "action": "Map every required wheel to a valid mechanism output and verify steering direction and ratio.",
+    },
+    "OPTIMIZATION_NO_FEASIBLE_SOLUTION": {
+        "check_id": "OPTIMIZATION_NO_FEASIBLE_SOLUTION",
+        "title": "No feasible candidate",
+        "action": "Relax only approved design bounds or targets, or change the mechanism. Do not apply an infeasible proposal.",
+    },
+}
+
+
+def engineering_failure_guidance(check_ids: Iterable[str]) -> list[dict[str, str]]:
+    """Return ordered operator actions for hard-check failures."""
+    guidance: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw_check_id in check_ids:
+        check_id = str(raw_check_id)
+        if not check_id or check_id in seen:
+            continue
+        seen.add(check_id)
+        guidance.append(
+            ENGINEERING_FAILURE_GUIDANCE.get(
+                check_id,
+                {
+                    "check_id": check_id,
+                    "title": f"Investigate {check_id}",
+                    "action": "Review the detailed failure and correct the design before saving or submitting this revision.",
+                },
+            )
+        )
+    return guidance
+
+
+def _serialized_combination_geometry_status(
+    raw_combination: object,
+) -> tuple[bool, str]:
+    """Ensure multi-body evidence includes geometry for every body."""
+
+    if raw_combination is None:
+        return True, "single-layout study"
+    if not isinstance(raw_combination, dict):
+        return False, "vehicle combination is not an object"
+
+    raw_bodies = raw_combination.get("bodies")
+    if not isinstance(raw_bodies, list) or len(raw_bodies) < 2:
+        return False, "at least two rigid bodies are required"
+    raw_body_count = raw_combination.get("body_count")
+    try:
+        body_count = int(raw_body_count)
+    except (TypeError, ValueError):
+        body_count = -1
+    if body_count != len(raw_bodies):
+        return False, "body count does not match the serialized bodies"
+
+    body_ids: set[str] = set()
+    for index, raw_body in enumerate(raw_bodies):
+        if not isinstance(raw_body, dict):
+            return False, f"body {index + 1} is not an object"
+        body_id = str(raw_body.get("id", ""))
+        if not body_id or body_id in body_ids:
+            return False, f"body {index + 1} has a missing or duplicate ID"
+        body_ids.add(body_id)
+
+        try:
+            length_mm = float(raw_body.get("body_length_mm"))
+            width_mm = float(raw_body.get("body_width_mm"))
+        except (TypeError, ValueError):
+            length_mm = width_mm = 0.0
+        has_positive_dimensions = (
+            math.isfinite(length_mm)
+            and math.isfinite(width_mm)
+            and length_mm > 0.0
+            and width_mm > 0.0
+        )
+
+        raw_polygon = raw_body.get("body_polygon")
+        try:
+            polygon = tuple(
+                Point2D(
+                    float(point.get("x_mm")),
+                    float(point.get("y_mm")),
+                )
+                for point in raw_polygon
+            )
+            PolygonEnvelope(polygon)
+            has_valid_outline = isinstance(raw_polygon, list)
+        except (AttributeError, TypeError, ValueError, InvalidGeometryError):
+            has_valid_outline = False
+        if not has_positive_dimensions and not has_valid_outline:
+            return False, f"body {body_id!r} has no positive envelope dimensions or CAD outline"
+
+    return True, f"{len(raw_bodies)} rigid bodies have usable envelopes"
+
+
+def evaluate_engineering_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    clearance_target_mm: float = 20.0,
+) -> dict[str, object]:
+    combination = snapshot.get("combination_kinematics")
+    combination = combination if isinstance(combination, dict) else {}
+    mechanism = snapshot.get("mechanism_graph")
+    mechanism = mechanism if isinstance(mechanism, dict) else {}
+    graph_state = mechanism.get("state")
+    graph_state = graph_state if isinstance(graph_state, dict) else {}
+    clearance = snapshot.get("clearance")
+    clearance = clearance if isinstance(clearance, dict) else {}
+    model_complete, model_detail = _serialized_combination_geometry_status(
+        snapshot.get("vehicle_combination")
+    )
+    raw_kinematics_residual = combination.get("maximum_constraint_residual_mm")
+    try:
+        kinematics_residual = float(raw_kinematics_residual)
+    except (TypeError, ValueError):
+        kinematics_residual = math.inf
+    checks = [
+        {
+            "id": "MODEL_COMPLETENESS",
+            "pass": model_complete,
+            "detail": model_detail,
+        },
+        {
+            "id": "KINEMATICS",
+            "pass": math.isfinite(kinematics_residual) and kinematics_residual <= 0.01,
+            "detail": (
+                "not evaluated"
+                if raw_kinematics_residual is None
+                else f"{kinematics_residual:.3f} mm maximum rolling residual"
+            ),
+        },
+        {
+            "id": "MECHANISM",
+            "pass": bool(graph_state) and float(graph_state.get("maximum_residual_mm", math.inf)) <= 0.01,
+            "detail": (
+                "not solved"
+                if not graph_state
+                else f"{float(graph_state.get('maximum_residual_mm', math.inf)):.3f} mm maximum member residual"
+            ),
+        },
+        {
+            "id": "COLLISION",
+            "pass": clearance.get("collision_detected") is False,
+            "detail": "clear" if clearance.get("collision_detected") is False else "collision detected or not evaluated",
+        },
+        {
+            "id": "CLEARANCE",
+            "pass": (
+                clearance.get("minimum_clearance_mm") is not None
+                and float(clearance["minimum_clearance_mm"]) >= clearance_target_mm
+            ),
+            "detail": (
+                "not evaluated"
+                if clearance.get("minimum_clearance_mm") is None
+                else f"{float(clearance['minimum_clearance_mm']):.1f} mm available; {clearance_target_mm:.1f} mm required"
+            ),
+        },
+    ]
+    return {
+        "status": "PASS" if all(bool(check["pass"]) for check in checks) else "FAIL",
+        "checks": checks,
+        "guidance": engineering_failure_guidance(
+            check["id"] for check in checks if not bool(check["pass"])
+        ),
+        "clearance_target_mm": clearance_target_mm,
+        "steering_acceptance_included": False,
+    }
+
+
+def _report_clearance_target_mm(
+    snapshot: dict[str, Any],
+    override: float | None,
+) -> float:
+    """Use the target captured with a saved sweep instead of a display default."""
+
+    candidates: list[object] = [override]
+    sweep = snapshot.get("sweep_validation")
+    if isinstance(sweep, dict):
+        candidates.append(sweep.get("clearance_target_mm"))
+    optimization = snapshot.get("optimization")
+    if isinstance(optimization, dict):
+        objective = optimization.get("objective")
+        if isinstance(objective, dict):
+            candidates.append(objective.get("clearance_target_mm"))
+    candidates.append(20.0)
+    for candidate in candidates:
+        try:
+            target = float(candidate)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(target) and target >= 0.0:
+            return target
+    return 20.0
+
+
+def build_engineering_snapshot_csv(
+    snapshot: dict[str, Any],
+    *,
+    project_name: str,
+    revision_id: str,
+    clearance_target_mm: float | None = None,
+) -> str:
+    evaluation = evaluate_engineering_snapshot(
+        snapshot,
+        clearance_target_mm=_report_clearance_target_mm(snapshot, clearance_target_mm),
+    )
+    actual = snapshot.get("actual_steering") or {}
+    actual_angles = actual.get("wheel_angles_deg") or {}
+    errors = actual.get("errors_deg") or {}
+    output_by_wheel = {
+        assignment["wheel_id"]: assignment["output_id"]
+        for assignment in (snapshot.get("mechanism_mapping") or {}).get("steering_assignments", [])
+    }
+    ideal_by_wheel: dict[str, float] = {}
+    axle_by_wheel: dict[str, str] = {}
+    for axle in snapshot.get("axles", []):
+        axle_id = str(axle.get("axle_id", ""))
+        raw_wheels = axle.get("wheels")
+        wheels = raw_wheels if isinstance(raw_wheels, list) else [
+            axle.get("left_wheel") or {},
+            axle.get("right_wheel") or {},
+        ]
+        for wheel in wheels:
+            if not isinstance(wheel, dict):
+                continue
+            wheel_id = str(wheel.get("wheel_id", wheel.get("id", "")))
+            if not wheel_id:
+                continue
+            ideal_by_wheel[wheel_id] = float(wheel.get("steering_angle_deg", 0.0))
+            axle_by_wheel[wheel_id] = axle_id
+
+    clearance = snapshot.get("clearance") or {}
+    graph_state = (snapshot.get("mechanism_graph") or {}).get("state") or {}
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "project_name",
+            "revision_id",
+            "engineering_status",
+            "beta_deg",
+            "turn_radius_mm",
+            "wheel_id",
+            "axle_id",
+            "mechanism_output_id",
+            "ideal_steering_deg",
+            "actual_steering_deg",
+            "error_deg",
+            "mechanism_residual_mm",
+            "minimum_clearance_mm",
+            "collision_detected",
+        ]
+    )
+    for wheel_id in sorted(set(ideal_by_wheel) | set(actual_angles)):
+        writer.writerow(
+            [
+                project_name,
+                revision_id,
+                evaluation["status"],
+                snapshot.get("beta_deg"),
+                snapshot.get("turn_radius_mm"),
+                wheel_id,
+                axle_by_wheel.get(wheel_id, ""),
+                output_by_wheel.get(wheel_id, ""),
+                ideal_by_wheel.get(wheel_id),
+                actual_angles.get(wheel_id),
+                errors.get(wheel_id),
+                graph_state.get("maximum_residual_mm"),
+                clearance.get("minimum_clearance_mm"),
+                clearance.get("collision_detected"),
+            ]
+        )
+    return output.getvalue()
+
+
+def build_engineering_snapshot_pdf(
+    snapshot: dict[str, Any],
+    *,
+    project_name: str,
+    revision_id: str,
+    clearance_target_mm: float | None = None,
+) -> bytes:
+    evaluation = evaluate_engineering_snapshot(
+        snapshot,
+        clearance_target_mm=_report_clearance_target_mm(snapshot, clearance_target_mm),
+    )
+    status = str(evaluation["status"])
+    combination = snapshot.get("vehicle_combination") or {}
+    graph = (snapshot.get("mechanism_graph") or {}).get("mechanism") or {}
+    graph_state = (snapshot.get("mechanism_graph") or {}).get("state") or {}
+    clearance = snapshot.get("clearance") or {}
+    metrics = snapshot.get("metrics") or {}
+
+    output = io.BytesIO()
+    pdf = canvas.Canvas(output, pagesize=landscape(letter), pageCompression=0)
+    width, height = landscape(letter)
+    pdf.setTitle(f"EasyTowing {status} Engineering Evaluation")
+    pdf.setAuthor("EasyTowing")
+    pdf.setSubject("Multi-body steering mechanism diagnostic report")
+
+    def page_header(title: str, subtitle: str) -> None:
+        pdf.setFillColor(colors.HexColor("#08111d"))
+        pdf.rect(0, 0, width, height, stroke=0, fill=1)
+        pdf.setFillColor(colors.HexColor("#e7eef7"))
+        pdf.setFont("Helvetica-Bold", 20)
+        pdf.drawString(36, height - 36, title)
+        pdf.setFont("Helvetica", 9)
+        pdf.setFillColor(colors.HexColor("#72e5ff"))
+        pdf.drawString(36, height - 52, subtitle)
+
+    page_header(
+        "EasyTowing Multi-body Engineering Evaluation",
+        f"{project_name} | Revision {revision_id} | Generated {datetime.utcnow().isoformat(timespec='seconds')}Z",
+    )
+    status_color = "#69d39d" if status == "PASS" else "#ff7d7d"
+    pdf.setFillColor(colors.HexColor(status_color))
+    pdf.setFont("Helvetica-Bold", 28)
+    pdf.drawString(36, height - 94, status)
+    pdf.setFont("Helvetica", 9)
+    pdf.setFillColor(colors.HexColor("#96a8be"))
+    pdf.drawString(112, height - 88, "HARD ENGINEERING CHECKS")
+    if status != "PASS":
+        pdf.drawString(112, height - 102, "DIAGNOSTIC ONLY - NOT APPROVED FOR MANUFACTURING")
+
+    summary_rows = [
+        ("Bodies / joints", f"{combination.get('body_count', 0)} / {combination.get('joint_count', 0)}"),
+        ("Mounted axles", str(combination.get("mounted_axle_count", len(snapshot.get("axles", []))))),
+        ("Articulation", f"{float(snapshot.get('beta_deg', 0.0)):.1f} deg"),
+        ("Root turn radius", _format_mm(float(snapshot.get("turn_radius_mm", 0.0)))),
+        ("Graph points / members", f"{len(graph.get('points', []))} / {len(graph.get('members', []))}"),
+        ("Wheel mappings", str(len((snapshot.get("mechanism_mapping") or {}).get("steering_assignments", [])))),
+        ("Graph residual", _format_mm(float(graph_state.get("maximum_residual_mm", math.inf)))),
+        ("Minimum clearance", "n/a" if clearance.get("minimum_clearance_mm") is None else _format_mm(float(clearance["minimum_clearance_mm"]))),
+        ("Max actual steering error", _format_deg(metrics.get("max_abs_wheel_error_deg"))),
+        ("Max synchronization error", _format_deg(metrics.get("max_abs_synchronization_error_deg"))),
+    ]
+    _pdf_draw_metric_table(pdf, 36, height - 130, "Design configuration", summary_rows, 340)
+    check_rows = [
+        (f"{check['id']} - {'PASS' if check['pass'] else 'FAIL'}", str(check["detail"]))
+        for check in evaluation["checks"]
+    ]
+    _pdf_draw_metric_table(pdf, 408, height - 130, "Hard checks", check_rows, 348)
+    pdf.setFillColor(colors.HexColor("#96a8be"))
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(36, 28, "Steering-error acceptance is excluded until Monroc approves project-specific limits.")
+    pdf.showPage()
+
+    page_header(
+        "Wheel results and mechanism traceability",
+        f"{status} evaluation at beta {float(snapshot.get('beta_deg', 0.0)):.1f} deg",
+    )
+    actual = snapshot.get("actual_steering") or {}
+    actual_angles = actual.get("wheel_angles_deg") or {}
+    errors = actual.get("errors_deg") or {}
+    mapping_by_wheel = {
+        item["wheel_id"]: item["output_id"]
+        for item in (snapshot.get("mechanism_mapping") or {}).get("steering_assignments", [])
+    }
+    wheel_rows = []
+    for axle in snapshot.get("axles", []):
+        raw_wheels = axle.get("wheels")
+        wheels = raw_wheels if isinstance(raw_wheels, list) else [
+            axle.get("left_wheel") or {},
+            axle.get("right_wheel") or {},
+        ]
+        for wheel in wheels:
+            if not isinstance(wheel, dict):
+                continue
+            wheel_id = str(wheel.get("wheel_id", wheel.get("id", "")))
+            if not wheel_id:
+                continue
+            wheel_rows.append(
+                (
+                    wheel_id,
+                    f"ideal {float(wheel.get('steering_angle_deg', 0.0)):+.2f} deg | actual {float(actual_angles.get(wheel_id, 0.0)):+.2f} deg | error {float(errors.get(wheel_id, 0.0)):+.2f} deg",
+                )
+            )
+    _pdf_draw_metric_table(pdf, 36, height - 78, "Wheel steering", wheel_rows, 720, row_height=17.0, font_size=7.7)
+    mapping_rows = [(wheel_id, output_id) for wheel_id, output_id in sorted(mapping_by_wheel.items())]
+    _pdf_draw_metric_table(pdf, 36, height - 78 - 38 - max(len(wheel_rows), 1) * 17, "Named mechanism outputs", mapping_rows, 720, row_height=15.0, font_size=6.8)
+    pdf.setFillColor(colors.HexColor("#96a8be"))
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(36, 28, "This report records the saved revision. CAD/manufacturing export requires a PASS verdict and controlled approval.")
+    pdf.save()
+    return output.getvalue()
+
+
 def _svg_escape_text(value: str) -> str:
     return escape(value, {"'": "&apos;", '"': "&quot;"})
 
@@ -2646,6 +3065,563 @@ def _dimension_line(start: Point2D, end: Point2D, offset_mm: float, label: str, 
     pieces.append(_svg_text(label_point.x_mm, -label_point.y_mm, f"{label}: {value}", f"{class_name}-label"))
     pieces.append("</g>")
     return "".join(pieces)
+
+
+def _snapshot_point(value: object) -> Point2D | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        x_mm = float(value["x_mm"])
+        y_mm = float(value["y_mm"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(x_mm) or not math.isfinite(y_mm):
+        return None
+    return Point2D(x_mm, y_mm)
+
+
+def _snapshot_transform_point(pose: dict[str, object], point: Point2D) -> Point2D:
+    x_mm = float(pose.get("x_mm", 0.0))
+    y_mm = float(pose.get("y_mm", 0.0))
+    yaw_rad = float(pose.get("yaw_rad", 0.0))
+    return Point2D(
+        x_mm + point.x_mm * math.cos(yaw_rad) - point.y_mm * math.sin(yaw_rad),
+        y_mm + point.x_mm * math.sin(yaw_rad) + point.y_mm * math.cos(yaw_rad),
+    )
+
+
+def _snapshot_body_outline(body: dict[str, object]) -> tuple[Point2D, ...]:
+    raw_polygon = body.get("body_polygon")
+    raw_points = raw_polygon if isinstance(raw_polygon, list) else []
+    polygon = tuple(
+        point
+        for raw_point in raw_points
+        if (point := _snapshot_point(raw_point)) is not None
+    )
+    if len(polygon) >= 3:
+        return polygon
+    try:
+        length_mm = float(body.get("body_length_mm") or 0.0)
+        width_mm = float(body.get("body_width_mm") or 0.0)
+    except (TypeError, ValueError):
+        return ()
+    if length_mm <= 0.0 or width_mm <= 0.0:
+        return ()
+    half_length = length_mm / 2.0
+    half_width = width_mm / 2.0
+    return (
+        Point2D(-half_length, -half_width),
+        Point2D(half_length, -half_width),
+        Point2D(half_length, half_width),
+        Point2D(-half_length, half_width),
+    )
+
+
+def _snapshot_multibody_geometry(snapshot: dict[str, Any]) -> dict[str, object]:
+    """Normalize saved multi-body geometry for all diagnostic renderers."""
+
+    combination = snapshot.get("vehicle_combination")
+    combination = combination if isinstance(combination, dict) else {}
+    bodies: list[dict[str, object]] = []
+    for raw_body in combination.get("bodies", []):
+        if not isinstance(raw_body, dict):
+            continue
+        raw_pose = raw_body.get("pose")
+        pose = raw_pose if isinstance(raw_pose, dict) else {}
+        outline = tuple(
+            _snapshot_transform_point(pose, point)
+            for point in _snapshot_body_outline(raw_body)
+        )
+        if outline:
+            bodies.append(
+                {
+                    "id": str(raw_body.get("id", "body")),
+                    "name": str(raw_body.get("name", raw_body.get("id", "body"))),
+                    "outline": outline,
+                    "pose": pose,
+                    "length_mm": raw_body.get("body_length_mm"),
+                    "width_mm": raw_body.get("body_width_mm"),
+                }
+            )
+    if not bodies:
+        outline = tuple(
+            point
+            for raw_point in snapshot.get("body_outline", [])
+            if (point := _snapshot_point(raw_point)) is not None
+        )
+        if outline:
+            bodies.append(
+                {
+                    "id": "vehicle",
+                    "name": str((snapshot.get("vehicle") or {}).get("name", "Vehicle")),
+                    "outline": outline,
+                    "pose": {},
+                    "length_mm": None,
+                    "width_mm": None,
+                }
+            )
+
+    body_by_id = {str(body["id"]): body for body in bodies}
+    joints: list[dict[str, object]] = []
+    for raw_joint in combination.get("joints", []):
+        if not isinstance(raw_joint, dict):
+            continue
+        parent_body = body_by_id.get(str(raw_joint.get("parent_body_id", "")))
+        child_body = body_by_id.get(str(raw_joint.get("child_body_id", "")))
+        parent_anchor = _snapshot_point(raw_joint.get("parent_anchor"))
+        child_anchor = _snapshot_point(raw_joint.get("child_anchor"))
+        if parent_body is None or child_body is None or parent_anchor is None or child_anchor is None:
+            continue
+        joints.append(
+            {
+                "id": str(raw_joint.get("id", "joint")),
+                "parent_anchor": _snapshot_transform_point(parent_body["pose"], parent_anchor),
+                "child_anchor": _snapshot_transform_point(child_body["pose"], child_anchor),
+                "articulation_deg": float(raw_joint.get("articulation_deg", 0.0)),
+                "maximum_articulation_deg": float(raw_joint.get("maximum_articulation_deg", 45.0)),
+            }
+        )
+
+    raw_axles = snapshot.get("axles")
+    if not isinstance(raw_axles, list):
+        vehicle = snapshot.get("vehicle")
+        raw_axles = vehicle.get("axles", []) if isinstance(vehicle, dict) else []
+    ideal_angles = ((snapshot.get("ideal") or {}).get("wheel_angles_deg") or {})
+    axles: list[dict[str, object]] = []
+    for raw_axle in raw_axles:
+        if not isinstance(raw_axle, dict):
+            continue
+        center = _snapshot_point(raw_axle.get("center"))
+        raw_wheels = raw_axle.get("wheels")
+        wheel_records = [item for item in raw_wheels if isinstance(item, dict)] if isinstance(raw_wheels, list) else [
+            raw_axle.get("left_wheel") or {},
+            raw_axle.get("right_wheel") or {},
+        ]
+        parsed_wheels = [
+            {
+                "center": wheel_center,
+                "id": str(item.get("wheel_id", item.get("id", ""))),
+                "heading_rad": float(item.get("heading_rad", 0.0)),
+                "side": str(item.get("side", "")),
+            }
+            for item in wheel_records
+            if (wheel_center := _snapshot_point(item.get("center"))) is not None
+        ]
+        left_record = next((item for item in parsed_wheels if item["side"] == "left"), None)
+        right_record = next((item for item in parsed_wheels if item["side"] == "right"), None)
+        left = None if left_record is None else left_record["center"]
+        right = None if right_record is None else right_record["center"]
+        axle_id = str(raw_axle.get("axle_id", raw_axle.get("id", "axle")))
+        if center is None:
+            center = Point2D(float(raw_axle.get("x_mm", 0.0)), float(raw_axle.get("y_mm", 0.0)))
+        if left is None or right is None:
+            track_mm = float(raw_axle.get("track_mm", 0.0))
+            heading_rad = float(raw_axle.get("heading_rad", 0.0))
+            lateral = Point2D(-math.sin(heading_rad), math.cos(heading_rad)).scale(track_mm / 2.0)
+            left = center + lateral
+            right = center - lateral
+        if center is None or left is None or right is None:
+            continue
+        left_id = str(
+            (raw_axle.get("left_wheel") or {}).get("wheel_id", f"{axle_id}_left")
+            if left_record is None
+            else left_record["id"]
+        )
+        right_id = str(
+            (raw_axle.get("right_wheel") or {}).get("wheel_id", f"{axle_id}_right")
+            if right_record is None
+            else right_record["id"]
+        )
+        base_heading_rad = float(raw_axle.get("heading_rad", raw_axle.get("center_heading_rad", 0.0)))
+        for item in parsed_wheels:
+            if not item["id"]:
+                item["id"] = f"{axle_id}_{item['side'] or 'wheel'}"
+            if item["heading_rad"] == 0.0:
+                item["heading_rad"] = base_heading_rad + math.radians(float(ideal_angles.get(item["id"], 0.0)))
+        if left_record is None:
+            left_heading_rad = float((raw_axle.get("left_wheel") or {}).get("heading_rad", base_heading_rad + math.radians(float(ideal_angles.get(left_id, 0.0)))))
+        else:
+            left_heading_rad = float(left_record["heading_rad"])
+        if right_record is None:
+            right_heading_rad = float((raw_axle.get("right_wheel") or {}).get("heading_rad", base_heading_rad + math.radians(float(ideal_angles.get(right_id, 0.0)))))
+        else:
+            right_heading_rad = float(right_record["heading_rad"])
+        axles.append(
+            {
+                "id": axle_id,
+                "center": center,
+                "left": left,
+                "right": right,
+                "wheels": parsed_wheels,
+                "left_id": left_id,
+                "right_id": right_id,
+                "left_heading_rad": left_heading_rad,
+                "right_heading_rad": right_heading_rad,
+            }
+        )
+
+    graph = snapshot.get("mechanism_graph")
+    graph = graph if isinstance(graph, dict) else {}
+    graph_definition = graph.get("mechanism")
+    graph_definition = graph_definition if isinstance(graph_definition, dict) else {}
+    graph_state = graph.get("state")
+    graph_state = graph_state if isinstance(graph_state, dict) else {}
+    graph_positions = graph_state.get("point_positions")
+    graph_positions = graph_positions if isinstance(graph_positions, dict) else {}
+    points: list[dict[str, object]] = []
+    for raw_point in graph_definition.get("points", []):
+        if not isinstance(raw_point, dict):
+            continue
+        position = _snapshot_point(graph_positions.get(str(raw_point.get("id", ""))))
+        if position is None:
+            position = _snapshot_point(raw_point.get("neutral_position"))
+        if position is not None:
+            points.append(
+                {
+                    "id": str(raw_point.get("id", "point")),
+                    "position": position,
+                    "radius_mm": float(raw_point.get("envelope_radius_mm", 0.0)),
+                    "body_id": raw_point.get("body_id"),
+                }
+            )
+    position_by_id = {str(point["id"]): point["position"] for point in points}
+    members: list[dict[str, object]] = []
+    for raw_member in graph_definition.get("members", []):
+        if not isinstance(raw_member, dict):
+            continue
+        start = position_by_id.get(str(raw_member.get("point_a_id", "")))
+        end = position_by_id.get(str(raw_member.get("point_b_id", "")))
+        if start is not None and end is not None:
+            members.append(
+                {
+                    "id": str(raw_member.get("id", "member")),
+                    "start": start,
+                    "end": end,
+                    "radius_mm": float(raw_member.get("envelope_radius_mm", 0.0)),
+                }
+            )
+    outputs: list[dict[str, object]] = []
+    for raw_output in graph_definition.get("angle_outputs", []):
+        if not isinstance(raw_output, dict):
+            continue
+        start = position_by_id.get(str(raw_output.get("pivot_point_id", "")))
+        end = position_by_id.get(str(raw_output.get("endpoint_point_id", "")))
+        if start is not None and end is not None:
+            outputs.append({"id": str(raw_output.get("id", "output")), "start": start, "end": end})
+
+    icr = _snapshot_point(snapshot.get("icr"))
+    all_points = [point for body in bodies for point in body["outline"]]
+    all_points.extend(
+        point
+        for axle in axles
+        for wheel in axle["wheels"]
+        for point in (wheel["center"],)
+    )
+    all_points.extend(point["position"] for point in points)
+    all_points.extend(
+        point
+        for joint in joints
+        for point in (joint["parent_anchor"], joint["child_anchor"])
+    )
+    if icr is not None:
+        all_points.append(icr)
+    if not all_points:
+        all_points = [Point2D(0.0, 0.0)]
+    return {
+        "bodies": bodies,
+        "joints": joints,
+        "axles": axles,
+        "points": points,
+        "members": members,
+        "outputs": outputs,
+        "icr": icr,
+        "all_points": all_points,
+    }
+
+
+def _snapshot_bounds(geometry: dict[str, object]) -> tuple[float, float, float, float]:
+    points = geometry["all_points"]
+    min_x = min(point.x_mm for point in points)
+    max_x = max(point.x_mm for point in points)
+    min_y = min(point.y_mm for point in points)
+    max_y = max(point.y_mm for point in points)
+    return min_x, max_x, min_y, max_y
+
+
+def build_engineering_snapshot_svg(
+    snapshot: dict[str, Any],
+    *,
+    project_name: str,
+    revision_id: str,
+    clearance_target_mm: float | None = None,
+) -> str:
+    """Render the saved multi-body revision as a dimensioned diagnostic sketch."""
+
+    geometry = _snapshot_multibody_geometry(snapshot)
+    min_x, max_x, min_y, max_y = _snapshot_bounds(geometry)
+    margin_x = 650.0
+    margin_y = 550.0
+    header_height = 950.0
+    view_min_x = min_x - margin_x
+    view_min_y = -(max_y + margin_y + header_height)
+    view_width = max(max_x - min_x + 2.0 * margin_x, 1.0)
+    view_height = max(max_y - min_y + 2.0 * margin_y + header_height, 1.0)
+    evaluation = evaluate_engineering_snapshot(
+        snapshot,
+        clearance_target_mm=_report_clearance_target_mm(snapshot, clearance_target_mm),
+    )
+    status = str(evaluation["status"])
+    status_color = "#69d39d" if status == "PASS" else "#ff7d7d"
+    pieces = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1100" viewBox="{view_min_x:.1f} {view_min_y:.1f} {view_width:.1f} {view_height:.1f}" role="img" aria-label="Multi-body dimensioned engineering sketch">',
+        """<style>
+          .canvas { fill: #08111d; }
+          .grid { stroke: rgba(255,255,255,0.06); stroke-width: 8; }
+          .body { fill: rgba(114,229,255,0.10); stroke: #72e5ff; stroke-width: 18; }
+          .joint { stroke: #f4b860; stroke-width: 18; stroke-dasharray: 45 25; }
+          .axle { stroke: #f4b860; stroke-width: 18; }
+          .wheel { fill: #13283a; stroke: #e7eef7; stroke-width: 12; }
+          .wheel-heading { stroke: #e7eef7; stroke-width: 10; }
+          .member { stroke: #69d39d; stroke-width: 18; }
+          .output { stroke: #ff9b8f; stroke-width: 24; }
+          .point { fill: #ffffff; stroke: #08111d; stroke-width: 12; }
+          .icr { fill: none; stroke: #ff7d7d; stroke-width: 14; stroke-dasharray: 36 24; }
+          .dimension-main { stroke: #f4b860; stroke-width: 12; }
+          .dimension-ext, .dimension-arrow { stroke: #f4b860; stroke-width: 8; }
+          .dimension-label { fill: #f4b860; font-size: 72px; font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+          .title { fill: #e7eef7; font-size: 100px; font-family: "Bahnschrift", "Segoe UI", sans-serif; font-weight: 700; }
+          .subtitle { fill: #96a8be; font-size: 58px; font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+          .label { fill: #e7eef7; font-size: 58px; font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+          .small-label { fill: #96a8be; font-size: 48px; font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+          .status { font-size: 82px; font-family: "Bahnschrift", "Segoe UI", sans-serif; font-weight: 700; }
+        </style>""",
+        f'<rect x="{view_min_x:.1f}" y="{view_min_y:.1f}" width="{view_width:.1f}" height="{view_height:.1f}" class="canvas" />',
+    ]
+    for x in range(math.floor(min_x / 1000.0) * 1000, math.ceil(max_x / 1000.0) * 1000 + 1, 1000):
+        pieces.append(_svg_line(x, -(max_y + margin_y), x, -(min_y - margin_y), "grid"))
+    for y in range(math.floor(min_y / 1000.0) * 1000, math.ceil(max_y / 1000.0) * 1000 + 1, 1000):
+        pieces.append(_svg_line(min_x - margin_x, -y, max_x + margin_x, -y, "grid"))
+
+    header_x = min_x - margin_x + 100.0
+    header_world_y = max_y + margin_y + header_height - 160.0
+    pieces.append(_svg_text(header_x, -header_world_y, "EasyTowing Multi-body Engineering Sketch", "title"))
+    pieces.append(_svg_text(header_x, -(header_world_y - 150.0), f"{_svg_escape_text(project_name)} | Revision {_svg_escape_text(revision_id)} | beta {float(snapshot.get('beta_deg', 0.0)):.1f} deg", "subtitle"))
+    pieces.append(_svg_text(header_x, -(header_world_y - 285.0), "Diagnostic geometry from the saved revision; not a manufacturing release.", "subtitle"))
+    pieces.append(_svg_text(max_x - 1100.0, -header_world_y, status, "status"))
+
+    for body in geometry["bodies"]:
+        pieces.append(_svg_polygon(body["outline"], "body"))
+        outline = body["outline"]
+        center = Point2D(
+            sum(point.x_mm for point in outline) / len(outline),
+            sum(point.y_mm for point in outline) / len(outline),
+        )
+        dimension_text = ""
+        if body["length_mm"] is not None and body["width_mm"] is not None:
+            dimension_text = f" | {float(body['length_mm']):.0f} x {float(body['width_mm']):.0f} mm"
+        pieces.append(_svg_text(center.x_mm, -center.y_mm, f"{body['name']}{dimension_text}", "label"))
+    for joint in geometry["joints"]:
+        pieces.append(_svg_line(joint["parent_anchor"].x_mm, -joint["parent_anchor"].y_mm, joint["child_anchor"].x_mm, -joint["child_anchor"].y_mm, "joint"))
+        pieces.append(_svg_circle(joint["parent_anchor"], 65.0, "point"))
+        pieces.append(_svg_circle(joint["child_anchor"], 65.0, "point"))
+        midpoint = Point2D(
+            (joint["parent_anchor"].x_mm + joint["child_anchor"].x_mm) / 2.0,
+            (joint["parent_anchor"].y_mm + joint["child_anchor"].y_mm) / 2.0,
+        )
+        pieces.append(_svg_text(midpoint.x_mm, -midpoint.y_mm - 110.0, f"{joint['id']} {float(joint['articulation_deg']):+.1f} deg / stop {float(joint['maximum_articulation_deg']):.1f} deg", "small-label"))
+    for axle in geometry["axles"]:
+        pieces.append(_svg_line(axle["left"].x_mm, -axle["left"].y_mm, axle["right"].x_mm, -axle["right"].y_mm, "axle"))
+        for wheel in axle["wheels"]:
+            center = wheel["center"]
+            heading = wheel["heading_rad"]
+            pieces.append(_svg_circle(center, 120.0, "wheel"))
+            end = Point2D(center.x_mm + math.cos(heading) * 450.0, center.y_mm + math.sin(heading) * 450.0)
+            pieces.append(_svg_line(center.x_mm, -center.y_mm, end.x_mm, -end.y_mm, "wheel-heading"))
+        pieces.append(_svg_text(axle["center"].x_mm + 100.0, -axle["center"].y_mm + 180.0, str(axle["id"]), "small-label"))
+    for member in geometry["members"]:
+        pieces.append(_svg_line(member["start"].x_mm, -member["start"].y_mm, member["end"].x_mm, -member["end"].y_mm, "member"))
+    for output in geometry["outputs"]:
+        pieces.append(_svg_line(output["start"].x_mm, -output["start"].y_mm, output["end"].x_mm, -output["end"].y_mm, "output"))
+        pieces.append(_svg_text(output["end"].x_mm + 90.0, -output["end"].y_mm, str(output["id"]), "small-label"))
+    for point in geometry["points"]:
+        pieces.append(_svg_circle(point["position"], max(float(point["radius_mm"]), 45.0), "point"))
+        pieces.append(_svg_text(point["position"].x_mm + 80.0, -point["position"].y_mm - 80.0, str(point["id"]), "small-label"))
+    if geometry["icr"] is not None:
+        pieces.append(_svg_circle(geometry["icr"], 120.0, "icr"))
+        pieces.append(_svg_text(geometry["icr"].x_mm + 150.0, -geometry["icr"].y_mm, "ICR", "small-label"))
+
+    pieces.append(_dimension_line(Point2D(min_x, min_y), Point2D(max_x, min_y), -350.0, "Overall length", _format_mm(max_x - min_x), "dimension"))
+    pieces.append(_dimension_line(Point2D(min_x, min_y), Point2D(min_x, max_y), 350.0, "Overall width", _format_mm(max_y - min_y), "dimension"))
+    checks = ", ".join(f"{check['id']} {'PASS' if check['pass'] else 'FAIL'}" for check in evaluation["checks"])
+    pieces.append(_svg_text(header_x, -(header_world_y - 420.0), checks, "small-label"))
+    pieces.append("</svg>")
+    return "".join(pieces)
+
+
+def _multibody_dxf_layers() -> list[tuple[str, int]]:
+    return [
+        ("ANNOTATION", 7),
+        ("BODY", 4),
+        ("JOINT", 2),
+        ("AXLE", 2),
+        ("WHEEL", 7),
+        ("MECHANISM", 3),
+        ("OUTPUT", 1),
+        ("DIMENSION", 6),
+        ("ICR", 5),
+    ]
+
+
+def build_engineering_snapshot_dxf(
+    snapshot: dict[str, Any],
+    *,
+    project_name: str,
+    revision_id: str,
+    clearance_target_mm: float | None = None,
+) -> str:
+    """Export saved multi-body geometry as a diagnostic ASCII DXF."""
+
+    geometry = _snapshot_multibody_geometry(snapshot)
+    min_x, max_x, min_y, max_y = _snapshot_bounds(geometry)
+    evaluation = evaluate_engineering_snapshot(
+        snapshot,
+        clearance_target_mm=_report_clearance_target_mm(snapshot, clearance_target_mm),
+    )
+    lines: list[str] = ["0", "SECTION", "2", "HEADER", "0", "ENDSEC"]
+    layer_lines: list[str] = ["0", "TABLE", "2", "LAYER", "70", str(len(_multibody_dxf_layers()))]
+    for layer_name, color in _multibody_dxf_layers():
+        layer_lines.extend(["0", "LAYER", "2", layer_name, "70", "0", "62", str(color), "6", "CONTINUOUS"])
+    layer_lines.extend(["0", "ENDTAB"])
+    lines.extend(_dxf_section("TABLES", layer_lines))
+    entities: list[str] = []
+    entities.extend(_dxf_text("ANNOTATION", Point2D(min_x, max_y + 1200.0), "EasyTowing Multi-body Engineering Sketch", 120.0))
+    entities.extend(_dxf_text("ANNOTATION", Point2D(min_x, max_y + 950.0), f"{project_name} | Revision {revision_id} | beta {float(snapshot.get('beta_deg', 0.0)):.1f} deg", 72.0))
+    entities.extend(_dxf_text("ANNOTATION", Point2D(min_x, max_y + 700.0), f"DIAGNOSTIC ONLY | ENGINEERING {evaluation['status']} | NOT A MANUFACTURING RELEASE", 58.0))
+    for body in geometry["bodies"]:
+        entities.extend(_dxf_lwpolyline("BODY", body["outline"], closed=True))
+        center = Point2D(
+            sum(point.x_mm for point in body["outline"]) / len(body["outline"]),
+            sum(point.y_mm for point in body["outline"]) / len(body["outline"]),
+        )
+        entities.extend(_dxf_text("ANNOTATION", center, str(body["name"]), 58.0))
+    for joint in geometry["joints"]:
+        entities.extend(_dxf_line("JOINT", joint["parent_anchor"], joint["child_anchor"]))
+        entities.extend(_dxf_circle("JOINT", joint["parent_anchor"], 65.0))
+        entities.extend(_dxf_circle("JOINT", joint["child_anchor"], 65.0))
+        entities.extend(_dxf_text("ANNOTATION", joint["parent_anchor"], f"{joint['id']} {float(joint['articulation_deg']):+.1f} deg", 48.0))
+    for axle in geometry["axles"]:
+        entities.extend(_dxf_line("AXLE", axle["left"], axle["right"]))
+        for wheel in axle["wheels"]:
+            center = wheel["center"]
+            heading = wheel["heading_rad"]
+            entities.extend(_dxf_circle("WHEEL", center, 120.0))
+            entities.extend(_dxf_line("WHEEL", center, Point2D(center.x_mm + math.cos(heading) * 450.0, center.y_mm + math.sin(heading) * 450.0)))
+        entities.extend(_dxf_text("ANNOTATION", axle["center"], str(axle["id"]), 48.0))
+    for member in geometry["members"]:
+        entities.extend(_dxf_line("MECHANISM", member["start"], member["end"]))
+    for output in geometry["outputs"]:
+        entities.extend(_dxf_line("OUTPUT", output["start"], output["end"]))
+        entities.extend(_dxf_text("ANNOTATION", output["end"], str(output["id"]), 48.0))
+    for point in geometry["points"]:
+        entities.extend(_dxf_circle("MECHANISM", point["position"], max(float(point["radius_mm"]), 45.0)))
+        entities.extend(_dxf_text("ANNOTATION", point["position"], str(point["id"]), 42.0))
+    if geometry["icr"] is not None:
+        entities.extend(_dxf_circle("ICR", geometry["icr"], 120.0))
+        entities.extend(_dxf_text("ANNOTATION", geometry["icr"], "ICR", 48.0))
+    dimension_y = min_y - 500.0
+    entities.extend(_dxf_line("DIMENSION", Point2D(min_x, min_y), Point2D(min_x, dimension_y)))
+    entities.extend(_dxf_line("DIMENSION", Point2D(max_x, min_y), Point2D(max_x, dimension_y)))
+    entities.extend(_dxf_line("DIMENSION", Point2D(min_x, dimension_y), Point2D(max_x, dimension_y)))
+    entities.extend(_dxf_text("DIMENSION", Point2D((min_x + max_x) / 2.0, dimension_y), f"Overall length {_format_mm(max_x - min_x)}", 58.0))
+    dimension_x = min_x - 500.0
+    entities.extend(_dxf_line("DIMENSION", Point2D(min_x, min_y), Point2D(dimension_x, min_y)))
+    entities.extend(_dxf_line("DIMENSION", Point2D(min_x, max_y), Point2D(dimension_x, max_y)))
+    entities.extend(_dxf_line("DIMENSION", Point2D(dimension_x, min_y), Point2D(dimension_x, max_y)))
+    entities.extend(_dxf_text("DIMENSION", Point2D(dimension_x, (min_y + max_y) / 2.0), f"Overall width {_format_mm(max_y - min_y)}", 58.0))
+    lines.extend(_dxf_section("ENTITIES", entities))
+    lines.extend(["0", "EOF"])
+    return "\n".join(lines)
+
+
+def build_engineering_snapshot_png(
+    snapshot: dict[str, Any],
+    *,
+    project_name: str,
+    revision_id: str,
+    clearance_target_mm: float | None = None,
+) -> bytes:
+    """Render saved multi-body geometry as a diagnostic PNG snapshot."""
+
+    geometry = _snapshot_multibody_geometry(snapshot)
+    min_x, max_x, min_y, max_y = _snapshot_bounds(geometry)
+    evaluation = evaluate_engineering_snapshot(
+        snapshot,
+        clearance_target_mm=_report_clearance_target_mm(snapshot, clearance_target_mm),
+    )
+    width, height = 1800, 1100
+    plot_left, plot_right = 80, width - 80
+    plot_top, plot_bottom = 170, height - 150
+    image = Image.new("RGB", (width, height), "#08111d")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    world_width = max(max_x - min_x, 1.0)
+    world_height = max(max_y - min_y, 1.0)
+    scale = min((plot_right - plot_left) / world_width, (plot_bottom - plot_top) / world_height)
+    offset_x = plot_left + ((plot_right - plot_left) - world_width * scale) / 2.0
+    offset_y = plot_top + ((plot_bottom - plot_top) - world_height * scale) / 2.0
+
+    def screen(point: Point2D) -> tuple[int, int]:
+        return (round(offset_x + (point.x_mm - min_x) * scale), round(offset_y + (max_y - point.y_mm) * scale))
+
+    def line(start: Point2D, end: Point2D, color: str, width_value: int = 4) -> None:
+        draw.line((*screen(start), *screen(end)), fill=color, width=width_value)
+
+    draw.text((80, 35), "EasyTowing Multi-body Engineering Snapshot", fill="#e7eef7", font=font)
+    draw.text((80, 65), f"{project_name} | Revision {revision_id} | beta {float(snapshot.get('beta_deg', 0.0)):.1f} deg", fill="#96a8be", font=font)
+    draw.text((80, 95), "Diagnostic geometry from the saved revision; not a manufacturing release.", fill="#96a8be", font=font)
+    status_color = "#69d39d" if evaluation["status"] == "PASS" else "#ff7d7d"
+    draw.text((width - 280, 45), str(evaluation["status"]), fill=status_color, font=font)
+    for body in geometry["bodies"]:
+        draw.polygon([screen(point) for point in body["outline"]], fill="#0e2a3d", outline="#72e5ff")
+        center = Point2D(sum(point.x_mm for point in body["outline"]) / len(body["outline"]), sum(point.y_mm for point in body["outline"]) / len(body["outline"]))
+        draw.text(screen(center), str(body["name"]), fill="#e7eef7", font=font)
+    for joint in geometry["joints"]:
+        line(joint["parent_anchor"], joint["child_anchor"], "#f4b860", 5)
+        for anchor in (joint["parent_anchor"], joint["child_anchor"]):
+            x, y = screen(anchor)
+            draw.ellipse((x - 8, y - 8, x + 8, y + 8), fill="#f4b860", outline="#ffffff")
+    for axle in geometry["axles"]:
+        line(axle["left"], axle["right"], "#f4b860", 4)
+        for wheel in axle["wheels"]:
+            center = wheel["center"]
+            heading = wheel["heading_rad"]
+            x, y = screen(center)
+            radius = max(7, round(120.0 * scale))
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill="#13283a", outline="#e7eef7")
+            line(center, Point2D(center.x_mm + math.cos(heading) * 450.0, center.y_mm + math.sin(heading) * 450.0), "#e7eef7", 2)
+        draw.text(screen(axle["center"]), str(axle["id"]), fill="#96a8be", font=font)
+    for member in geometry["members"]:
+        line(member["start"], member["end"], "#69d39d", 4)
+    for output in geometry["outputs"]:
+        line(output["start"], output["end"], "#ff9b8f", 5)
+        draw.text(screen(output["end"]), str(output["id"]), fill="#ff9b8f", font=font)
+    for point in geometry["points"]:
+        x, y = screen(point["position"])
+        draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill="#ffffff", outline="#08111d")
+        draw.text((x + 10, y - 10), str(point["id"]), fill="#96a8be", font=font)
+    if geometry["icr"] is not None:
+        x, y = screen(geometry["icr"])
+        draw.ellipse((x - 9, y - 9, x + 9, y + 9), outline="#ff7d7d", width=3)
+        draw.text((x + 12, y - 10), "ICR", fill="#ff7d7d", font=font)
+    dimension_y = min_y - max(world_height * 0.08, 300.0)
+    line(Point2D(min_x, dimension_y), Point2D(max_x, dimension_y), "#f4b860", 2)
+    draw.text(screen(Point2D((min_x + max_x) / 2.0, dimension_y)), f"L {_format_mm(max_x - min_x)}", fill="#f4b860", font=font)
+    draw.rectangle((80, height - 105, width - 80, height - 35), fill="#0e1d2e", outline="#2a4962")
+    check_text = " | ".join(f"{check['id']} {'PASS' if check['pass'] else 'FAIL'}" for check in evaluation["checks"])
+    draw.text((100, height - 82), check_text, fill="#e7eef7", font=font)
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def _comparison_metric_rows(context: ExportContext) -> list[tuple[str, str, str]]:
@@ -2731,7 +3707,7 @@ def build_dimensioned_svg(
     pieces.append(_svg_polygon(_vehicle_body_points(context.vehicle), "body"))
 
     for axle in context.vehicle.axles:
-        left, right = axle.wheels()
+        left, right = axle.outer_wheels()
         pieces.append(_svg_line(left.center.x_mm, -left.center.y_mm, right.center.x_mm, -right.center.y_mm, "axle"))
 
     pieces.append(_draw_linkage(context.baseline_state, baseline_spec, "baseline", "Existing", 0.32))

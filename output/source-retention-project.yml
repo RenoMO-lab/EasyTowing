@@ -1,0 +1,158 @@
+- generic [ref=f2e2]:
+  - banner [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - paragraph [ref=f2e5]: Monroc Design Engineering
+      - heading "EasyTowing Steering Workspace" [level=1] [ref=f2e6]
+    - generic [ref=f2e7]:
+      - generic [ref=f2e8]: Mode
+      - strong [ref=f2e9]: Simulation
+  - main [ref=f2e10]:
+    - navigation "Engineering workflow" [ref=f2e11]:
+      - button "Project READY" [ref=f2e326] [cursor=pointer]:
+        - generic [ref=f2e13]: "01"
+        - strong [ref=f2e14]: Project
+        - generic [ref=f2e15]: Open or revise
+        - text: READY
+      - button "Vehicle READY" [ref=f2e16] [cursor=pointer]:
+        - generic [ref=f2e17]: "02"
+        - strong [ref=f2e18]: Vehicle
+        - generic [ref=f2e19]: Bodies and axles
+        - text: READY
+      - button "Maneuver READY" [ref=f2e321] [cursor=pointer]:
+        - generic [ref=f2e21]: "03"
+        - strong [ref=f2e22]: Maneuver
+        - generic [ref=f2e23]: Radius and motion
+        - text: READY
+      - button "Mechanism TODO" [ref=f2e24] [cursor=pointer]:
+        - generic [ref=f2e25]: "04"
+        - strong [ref=f2e26]: Mechanism
+        - generic [ref=f2e27]: Links and pivots
+        - text: TODO
+      - button "Validate TODO" [ref=f2e322] [cursor=pointer]:
+        - generic [ref=f2e29]: "05"
+        - strong [ref=f2e30]: Validate
+        - generic [ref=f2e31]: Errors and clearance
+        - text: TODO
+      - button "Optimize OPTIONAL" [ref=f2e32] [cursor=pointer]:
+        - generic [ref=f2e33]: "06"
+        - strong [ref=f2e34]: Optimize
+        - generic [ref=f2e35]: Constrained search
+        - text: OPTIONAL
+      - button "Results FAIL" [ref=f2e323] [cursor=pointer]:
+        - generic [ref=f2e37]: "07"
+        - strong [ref=f2e38]: Results
+        - generic [ref=f2e39]: Review and export
+        - text: FAIL
+    - generic [ref=f2e40]:
+      - generic [ref=f2e41]:
+        - generic [ref=f2e42]:
+          - heading "Top-view kinematics" [level=2] [ref=f2e43]
+          - paragraph [ref=f2e44]: Live articulation, linkage, and clearance over the ideal steering core.
+        - generic [ref=f2e45]:
+          - combobox "Display mode" [ref=f2e46]:
+            - option "Simulation" [selected]
+            - option "Clearance focus"
+            - option "Steering rays"
+            - option "Error focus"
+            - option "Dimensioned sketch"
+            - option "Optimized design"
+          - button "Edit axle layout" [ref=f2e47] [cursor=pointer]
+          - generic [ref=f2e48]: Live view
+      - img "Ideal steering diagram" [ref=f2e50]:
+        - generic [ref=f2e351]: Bell crank
+        - generic [ref=f2e352]: Knuckle
+        - generic [ref=f2e353]: Companion knuckle
+    - complementary [ref=f2e97]:
+      - generic [ref=f2e98]:
+        - text: Step 01
+        - heading "Project" [level=2] [ref=f2e324]
+        - paragraph [ref=f2e100]: Open a design project or create a controlled starting revision.
+      - generic [ref=f2e101]:
+        - paragraph [ref=f2e102]: Decision path
+        - heading "Define, solve, prove, review" [level=3] [ref=f2e103]
+        - paragraph [ref=f2e104]:
+          - strong [ref=f2e105]: "The engineering question:"
+          - text: does this defined towing-axis mechanism steer every mapped wheel correctly and remain physically feasible across the selected articulation range?
+        - list [ref=f2e106]:
+          - listitem [ref=f2e107]:
+            - strong [ref=f2e108]: "Define:"
+            - text: bodies, axles, pivots, links, and wheel mappings.
+          - listitem [ref=f2e109]:
+            - strong [ref=f2e110]: "Solve:"
+            - text: compute the common maneuver geometry and mechanism pose.
+          - listitem [ref=f2e111]:
+            - strong [ref=f2e112]: "Prove:"
+            - text: check closure, steering, collision, and clearance at every pose.
+          - listitem [ref=f2e113]:
+            - strong [ref=f2e114]: "Review:"
+            - text: save the evidence, compare the proposal, then submit it for independent approval.
+        - generic [ref=f2e115]:
+          - strong [ref=f2e116]: What the result contains
+          - paragraph [ref=f2e117]: Actual versus ideal wheel angles, mechanism residuals, collision and clearance findings, full-range evidence, and a traceable project revision.
+        - paragraph [ref=f2e118]:
+          - strong [ref=f2e119]: PASS
+          - text: means the configured hard checks pass.
+          - strong [ref=f2e120]: FAIL
+          - text: means diagnostic evidence only, never a manufacturing release.
+        - generic [ref=f2e121]:
+          - paragraph [ref=f2e122]: Next action
+          - strong [ref=f2e123]: Apply the steering linkage
+          - paragraph [ref=f2e124]: Define the physical linkage dimensions and apply the configuration before validation.
+          - button "Go to Mechanism" [ref=f2e325] [cursor=pointer]
+      - generic [ref=f2e126]:
+        - generic [ref=f2e127]:
+          - generic [ref=f2e128]:
+            - paragraph [ref=f2e129]: Project dashboard
+            - heading "Project" [level=3] [ref=f2e130]
+          - generic [ref=f2e131]:
+            - combobox "Open project" [ref=f2e132]:
+              - option "Reference Demo Project (2 revisions)" [selected]
+              - option "Profile guard smoke (1 revisions)"
+            - textbox "Project name" [ref=f2e133]: Reference Demo Project
+            - button "Create" [ref=f2e134]
+            - button "Save Revision" [active] [ref=f2e135]
+        - generic [ref=f2e136]:
+          - generic [ref=f2e137]:
+            - generic [ref=f2e138]: Project ID
+            - strong [ref=f2e139]: proj_70ed75940c
+          - generic [ref=f2e140]:
+            - generic [ref=f2e141]: Active revision
+            - strong [ref=f2e142]: rev_bbbccb55d0
+          - generic [ref=f2e143]:
+            - generic [ref=f2e144]: Revision count
+            - strong [ref=f2e145]: "2"
+          - generic [ref=f2e146]:
+            - generic [ref=f2e147]: Engineering verdict
+            - strong [ref=f2e148]: FAIL
+            - generic [ref=f2e149]: One or more current-pose hard checks failed.
+          - generic [ref=f2e150]:
+            - generic [ref=f2e151]: Review gate
+            - strong [ref=f2e152]: DRAFT
+            - generic [ref=f2e153]: Saved revision is not submitted for independent review.
+          - generic [ref=f2e154]:
+            - generic [ref=f2e155]: Model scope
+            - strong [ref=f2e156]: 1 axle study
+            - generic [ref=f2e157]: Single-layout ideal study is active.
+        - textbox "Revision note" [ref=f2e158]: Initial revision
+        - generic [ref=f2e159]:
+          - generic [ref=f2e354]:
+            - generic [ref=f2e355]:
+              - generic [ref=f2e356]: Initial revision
+              - generic [ref=f2e357]: rev_b1c340dd79 | 8/28/2026, 12:01:31 AM | beta 0.0 deg | case -45..45 deg | quick
+            - button "Load" [ref=f2e358] [cursor=pointer]
+          - generic [ref=f2e359]:
+            - generic [ref=f2e360]:
+              - generic [ref=f2e361]: Initial revision
+              - generic [ref=f2e362]: rev_bbbccb55d0 | 8/28/2026, 4:00:42 AM | beta 0.0 deg | case -45..45 deg | quick
+            - button "Load" [ref=f2e363] [cursor=pointer]
+      - group [ref=f2e165]:
+        - generic "Workspace access" [ref=f2e166] [cursor=pointer]
+  - generic [ref=f2e167]:
+    - generic [ref=f2e168]:
+      - text: Articulation
+      - generic [ref=f2e169]: 0 deg
+    - slider "Articulation 0 deg" [ref=f2e170]: "0"
+    - generic [ref=f2e171]:
+      - generic [ref=f2e172]: "-45"
+      - generic [ref=f2e173]: "0"
+      - generic [ref=f2e174]: "+45"

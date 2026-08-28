@@ -1,96 +1,100 @@
-# Architecture Proposal
+# Architecture
 
-## Goal
+## Product goal
 
-Build an engineering application where the calculation core is independent from the UI:
+EasyTowing is an engineering tool for defining and checking steering axes on
+single-body and articulated towing combinations. The calculation boundary must
+remain independent from the browser so that every result can be replayed from
+saved geometry, mechanism inputs, and the selected maneuver.
 
-- trailer geometry and rigid-body model;
-- ideal steering and ICR solver;
-- mechanical linkage solver;
-- collision and clearance analysis;
-- optimization;
-- visualization and export.
+## Current implementation
 
-## Current implementation shape
+The root `easytowing/` package currently contains:
 
-Implemented so far:
+- arbitrary-axle ideal steering and common-ICR calculation;
+- articulated body-chain inputs with explicit joint closure checks;
+- a generalized planar fixed-length mechanism graph with named wheel-output
+  mappings;
+- actual-versus-ideal steering comparison for graph-mapped wheels;
+- centralized clearance, point-envelope, body-beam, and tire checks;
+- hard feasibility rules that prevent an infeasible optimization result from
+  being treated as an accepted design;
+- bounded Cartesian full articulation-range sweep validation for every
+  articulation joint, with explicit ranges overriding safe defaults and
+  per-pose failure reasons;
+- project/revision persistence for vehicle, combination, mechanism, mapping,
+  and diagnostic snapshot data;
+- JSON, CSV, PDF, SVG, and DXF reporting helpers;
+- a guided browser workspace that exposes the engineering sequence instead of
+  presenting raw solver controls first;
+- local SaaS control-plane primitives for tenant, role, session, approval,
+  asynchronous-job, and audit behavior;
+- a PostgreSQL control-plane schema, adapter foundation, and backup operation.
 
-- geometry primitives and ideal steering solver;
-- arbitrary-axle vehicle layouts with persisted axle metadata;
-- rigid-link planar linkage solver;
-- editable linkage configuration with neutral branch establishment;
-- clearance and overlap analysis;
-- deterministic pure-Python linkage optimizer;
-- SVG browser demo with live beta slider;
-- project/revision persistence with save, load, restore, geometry, vehicle, and linkage configuration;
-- export bundle helpers for JSON, CSV, PDF, SVG sketch output, and DXF sketch output.
-- steering-curve sweep SVG preview for ideal, baseline, and optimized linkage response;
-- swept-path preview for wheel-center trajectories and body extents.
-- manual DXF import assignment workflow with entity suggestions and a reconstructed parametric layout preview.
-- articulated body-chain primitives for future multi-trailer coordination.
+The demo runtime is intentionally small: a Python standard-library HTTP server
+and browser JavaScript. Without `EASYTOWING_DATABASE_URL` it uses JSON projects
+and in-memory SaaS controls for local validation. With that variable and the
+PostgreSQL extra installed, the same HTTP routes use the PostgreSQL project and
+control-plane adapters.
 
-## Recommended target architecture
+## Calculation flow
 
-- Frontend: React / Next.js / TypeScript
-- API: FastAPI
-- Core math: Python
-- Geometry and optimization: Python numeric libraries later, starting with pure deterministic math
-- Visualization: SVG-first 2D top view
-- Export: CSV, SVG, DXF, JSON
+1. Define the bodies, axles, wheel geometry, and each joint's physical
+   articulation stop.
+2. Resolve the selected maneuver into a common instantaneous center of rotation.
+3. Solve the explicit mechanism graph for the current articulation pose.
+4. Map named graph outputs to named wheels and compare actual steering with the
+   ideal target.
+5. Evaluate member, point, body, tire, and wheel clearance.
+6. Repeat the hard checks across the full articulation range.
+7. Save the complete revision evidence before any review decision.
 
-## Why this separation matters
+For articulated combinations, "full range" means the Cartesian product of the
+signed range for every articulation joint. Explicit joint ranges override the
+configured/default bounds; an omitted joint is never silently held at nominal.
+Each sampled joint angle is also checked against that joint's physical stop;
+the sweep range is not a substitute for the stop and an out-of-stop sample is
+a hard failure.
+The request is rejected as incomplete when the grid exceeds its sample budget;
+the server never truncates a multi-joint sweep without reporting failure.
 
-- The ideal steering math must be unit tested without a browser.
-- The eventual linkage and optimization solvers will need repeatable inputs and outputs.
-- The UI should only render results and capture design intent.
+A failed hard check is diagnostic evidence only. It is not an approved
+manufacturing design.
 
-## Phase breakdown
+## Production target
 
-1. Mathematical specification and data model
-2. Ideal steering core
-3. Minimal interactive top-view prototype
-4. Mechanical linkage solver
-5. Actual vs ideal comparison
-6. Collision and clearance checks
-7. Optimization
-8. Dimensioned engineering output
-9. Import/export workflows
+The production boundary should be split into:
 
-## Proposed folder structure
+- Frontend: a typed application with the same guided workflow and explicit
+  review states;
+- API: a production HTTP service with request validation, authorization, and
+  job queues;
+- Core math: the current deterministic Python package, extended with validated
+  multi-trailer and mechanism cases;
+- Persistence: PostgreSQL for organizations, users, projects, revisions,
+  approvals, jobs, and audit events, with object storage for CAD/report files;
+- Visualization/export: SVG/Canvas previews and controlled engineering output.
 
-```text
-docs/
-  audit.md
-  architecture.md
-  steering-model.md
-  domain-model.md
-  roadmap.md
- easytowing/
-   __init__.py
-   __main__.py
-   collision.py
-   errors.py
-   geometry.py
-   linkage.py
-   optimization.py
-   model.py
-   steering.py
-   web/
-     app.js
-     index.html
-     styles.css
- tests/
-   test_collision.py
-   test_linkage.py
-   test_optimization.py
-   test_steering.py
-```
-
-The repository uses the root `easytowing/` package as its canonical source, as
-declared by `pyproject.toml`. The historical `src/easytowing/` path is retained
-only as a compatibility redirect for older `PYTHONPATH` setups.
+The current repository wires the live demo server to PostgreSQL when configured
+and provides a separate durable worker command for engineering jobs, but does
+not provide production process supervision, object-storage deployment, or
+managed identity integration.
 
 ## Current scope boundary
 
-- Implemented now: geometry primitives, arbitrary-axle ideal steering, editable primary/companion linkage solver, collision analysis, optimization core, analytical validation, project history, browser exports, manual DXF assignment with parametric reconstruction, and body-chain primitives.
-- Deferred: full multi-trailer coordination and generalized multi-axle mechanical linkage networks.
+Implemented now: explicit multi-body kinematics, generalized graph solving,
+named steering mappings, hard clearance feasibility, range sweeps, revision
+snapshots, diagnostic reporting, and local approval/job/audit primitives.
+
+Still required for a Monroc operational release:
+
+- production identity, secret management, deployment, monitoring, and backup
+  restore drills;
+- production worker supervision and object storage for generated CAD/report files;
+- graph-native topology/geometry optimization beyond the current bounded
+  driver-and-wheel-mapping optimizer;
+- richer CAD feature import/assignment, review/approval, and failure guidance;
+- validated multi-trailer coordination and real Monroc CAD/hand-calculation
+  acceptance cases;
+- Monroc-approved thresholds for steering error, clearance, envelopes, and
+  manufacturing release.

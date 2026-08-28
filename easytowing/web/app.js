@@ -7,11 +7,78 @@ const state = {
   dxfImportText: "",
   dxfImportSourceName: "",
   dxfImportPayload: null,
+  cadSourceArtifact: null,
   interactiveEdit: false,
   draggingAxleId: null,
   currentProjectId: null,
+  activeProjectRevisionId: null,
+  authToken: sessionStorage.getItem("easytowing_auth_token") || null,
+  authPrincipal: null,
+  authRequired: false,
+  artifactStorageBackend: "response-only",
+  reviewerUsers: [],
+  approvalStatus: null,
+  approvalHistory: [],
   currentPayload: null,
+  maneuverResolved: false,
   optimizationPayload: null,
+  currentValidationPass: false,
+  sweepValidationPayload: null,
+  acceptanceResult: null,
+  acceptanceCriteriaDirty: false,
+  workspaceDirty: false,
+  activeRevisionHasFullRangeEvidence: false,
+  activeWorkflowStep: "project",
+  // New work starts in the explicit multi-body path. Loading an existing
+  // legacy revision still switches this back to false in renderProjectFromDetail.
+  combinationActive: true,
+  combinationId: "workspace_combination",
+  combinationName: "Workspace vehicle combination",
+  combinationSynchronizations: [],
+  combinationBodies: [
+    {
+      id: "body_1",
+      name: "Rear body",
+      lengthMm: 1800,
+      widthMm: 3200,
+      bodyPolygon: [],
+      bodyPolygonText: "",
+      bodyPolygonError: null,
+      articulationDeg: 0,
+      articulationMinDeg: -45,
+      articulationMaxDeg: 45,
+      articulationStepDeg: 5,
+      articulationLimitDeg: 45,
+      parentAnchorXmm: 0,
+      parentAnchorYmm: 0,
+      childAnchorXmm: 0,
+      childAnchorYmm: 0,
+      axles: [{ id: "body_1_axle_1", xMm: 0, yMm: 0, trackMm: 2500, mode: "FORCED_STEER", wheelCount: 2, maximumSteeringAngleDeg: 45, steeringStopDeg: null, tireWidthMm: 400, outsideDiameterMm: 1000 }],
+    },
+    {
+      id: "body_2",
+      name: "Front body",
+      lengthMm: 1800,
+      widthMm: 3200,
+      bodyPolygon: [],
+      bodyPolygonText: "",
+      bodyPolygonError: null,
+      articulationDeg: 0,
+      articulationMinDeg: -45,
+      articulationMaxDeg: 45,
+      articulationStepDeg: 5,
+      articulationLimitDeg: 45,
+      parentAnchorXmm: 2180,
+      parentAnchorYmm: 0,
+      childAnchorXmm: -2180,
+      childAnchorYmm: 0,
+      axles: [{ id: "body_2_axle_1", xMm: 0, yMm: 0, trackMm: 2500, mode: "FORCED_STEER", wheelCount: 2, maximumSteeringAngleDeg: 45, steeringStopDeg: null, tireWidthMm: 400, outsideDiameterMm: 1000 }],
+    },
+  ],
+  mechanismGraph: null,
+  mechanismGraphEditorDraft: null,
+  mechanismDrivers: [],
+  steeringAssignments: [],
   customAxles: [],
   vehicleConfig: null,
   designCases: [],
@@ -83,6 +150,9 @@ const optimizeOptimizedRms = document.getElementById("opt-optimized-rms");
 const optimizeBaselineClearance = document.getElementById("opt-baseline-clearance");
 const optimizeOptimizedClearance = document.getElementById("opt-optimized-clearance");
 const optimizeRunStats = document.getElementById("opt-run-stats");
+const optimizeFeasibilityCard = document.getElementById("opt-feasibility-card");
+const optimizeFeasibilityStatus = document.getElementById("opt-feasibility-status");
+const optimizeFeasibilityReasons = document.getElementById("opt-feasibility-reasons");
 const optimizeVariableTable = document.getElementById("opt-variable-table");
 const optimizeVariableConfig = document.getElementById("opt-variable-config");
 const optimizeClearanceTarget = document.getElementById("opt-clearance-target");
@@ -102,10 +172,17 @@ const exportPdfLink = document.getElementById("export-pdf");
 const exportPngLink = document.getElementById("export-png");
 const exportSvgLink = document.getElementById("export-svg");
 const exportDxfLink = document.getElementById("export-dxf");
+const exportReleaseLink = document.getElementById("export-release");
+const exportNote = document.getElementById("export-note");
 const dxfFileInput = document.getElementById("dxf-file-input");
 const dxfImportButton = document.getElementById("dxf-import-button");
 const dxfApplyButton = document.getElementById("dxf-apply-button");
+const dxfRetainSourceButton = document.getElementById("dxf-retain-source-button");
 const dxfImportStatus = document.getElementById("dxf-import-status");
+const dxfMetadataStatus = document.getElementById("dxf-metadata-status");
+const dxfSourceRetentionStatus = document.getElementById("dxf-source-retention-status");
+const dxfSourceUnits = document.getElementById("dxf-source-units");
+const dxfCoordinateSystem = document.getElementById("dxf-coordinate-system");
 const dxfEntityCount = document.getElementById("dxf-entity-count");
 const dxfSupportedCount = document.getElementById("dxf-supported-count");
 const dxfBoundsValue = document.getElementById("dxf-bounds-value");
@@ -114,6 +191,9 @@ const dxfParametricValue = document.getElementById("dxf-parametric-value");
 const dxfEntityTable = document.getElementById("dxf-entity-table");
 const steeringCurvesImage = document.getElementById("steering-curves-image");
 const sweptPathImage = document.getElementById("swept-path-image");
+const steeringCurvesStatus = document.getElementById("steering-curves-status");
+const sweptPathStatus = document.getElementById("swept-path-status");
+const projectSelector = document.getElementById("project-selector");
 const projectNameInput = document.getElementById("project-name-input");
 const projectCreateButton = document.getElementById("project-create-button");
 const projectSaveButton = document.getElementById("project-save-button");
@@ -121,7 +201,60 @@ const projectNoteInput = document.getElementById("project-note-input");
 const projectIdValue = document.getElementById("project-id-value");
 const projectActiveRevisionValue = document.getElementById("project-active-revision-value");
 const projectRevisionCountValue = document.getElementById("project-revision-count-value");
+const projectEngineeringCard = document.getElementById("project-engineering-card");
+const projectEngineeringState = document.getElementById("project-engineering-state");
+const projectEngineeringDetail = document.getElementById("project-engineering-detail");
+const projectReviewCard = document.getElementById("project-review-card");
+const projectReviewState = document.getElementById("project-review-state");
+const projectReviewDetail = document.getElementById("project-review-detail");
+const projectScopeCard = document.getElementById("project-scope-card");
+const projectModelScope = document.getElementById("project-model-scope");
+const projectModelDetail = document.getElementById("project-model-detail");
 const projectRevisionList = document.getElementById("project-revision-list");
+const authStatus = document.getElementById("auth-status");
+const authForm = document.getElementById("auth-form");
+const authOrganizationInput = document.getElementById("auth-organization");
+const authEmailInput = document.getElementById("auth-email");
+const authPasswordInput = document.getElementById("auth-password");
+const authLoginButton = document.getElementById("auth-login-button");
+const authLogoutButton = document.getElementById("auth-logout-button");
+const workspaceAccessCard = document.getElementById("workspace-access-card");
+const reviewState = document.getElementById("review-state");
+const reviewStatusNote = document.getElementById("review-status-note");
+const reviewSubmitButton = document.getElementById("review-submit-button");
+const reviewApproveButton = document.getElementById("review-approve-button");
+const reviewRejectButton = document.getElementById("review-reject-button");
+const reviewerSelector = document.getElementById("reviewer-selector");
+const reviewerAssignButton = document.getElementById("reviewer-assign-button");
+const reviewerAssignmentStatus = document.getElementById("reviewer-assignment-status");
+const currentValidationGuidance = document.getElementById("current-validation-guidance");
+const sweepValidationGuidance = document.getElementById("sweep-validation-guidance");
+const workflowNextTitle = document.getElementById("workflow-next-title");
+const workflowNextDetail = document.getElementById("workflow-next-detail");
+const workflowNextButton = document.getElementById("workflow-next-button");
+const workflowGuide = document.getElementById("workflow-guide");
+const projectStartCard = document.getElementById("project-start-card");
+const projectStartTitle = document.getElementById("project-start-title");
+const projectStartDetail = document.getElementById("project-start-detail");
+const projectStartButton = document.getElementById("project-start-button");
+const acceptanceCaseIdInput = document.getElementById("acceptance-case-id");
+const acceptanceMinClearanceInput = document.getElementById("acceptance-min-clearance");
+const acceptanceMaxWheelErrorInput = document.getElementById("acceptance-max-wheel-error");
+const acceptanceMaxSyncErrorInput = document.getElementById("acceptance-max-sync-error");
+const acceptanceMaxResidualInput = document.getElementById("acceptance-max-residual");
+const acceptanceRequireFullRangeInput = document.getElementById("acceptance-require-full-range");
+const acceptanceEvaluateButton = document.getElementById("acceptance-evaluate-button");
+const acceptanceStatusNote = document.getElementById("acceptance-status-note");
+const acceptanceChecks = document.getElementById("acceptance-checks");
+const releaseChecklistState = document.getElementById("release-checklist-state");
+const releaseChecklist = document.getElementById("release-checklist");
+const releaseChecklistNote = document.getElementById("release-checklist-note");
+const resultsDecisionCard = document.getElementById("results-decision-card");
+const resultsDecisionStatus = document.getElementById("results-decision-status");
+const resultsDecisionSummary = document.getElementById("results-decision-summary");
+const resultsDecisionChecks = document.getElementById("results-decision-checks");
+const resultsDecisionNote = document.getElementById("results-decision-note");
+const approvalHistory = document.getElementById("approval-history");
 const bodyChainBodyCountValue = document.getElementById("body-chain-body-count");
 const bodyChainJointCountValue = document.getElementById("body-chain-joint-count");
 const bodyChainRootValue = document.getElementById("body-chain-root");
@@ -152,6 +285,100 @@ const linkageCompanionEnabled = document.getElementById("linkage-companion-enabl
 const linkageApplyButton = document.getElementById("linkage-apply-button");
 const linkageResetButton = document.getElementById("linkage-reset-button");
 const linkageConfigStatus = document.getElementById("linkage-config-status");
+const workflowSteps = [...document.querySelectorAll("[data-workflow-step]")];
+const workflowStepNumber = document.getElementById("workflow-step-number");
+const workflowStepTitle = document.getElementById("workflow-step-title");
+const workflowStepDescription = document.getElementById("workflow-step-description");
+const combinationBodyCountInput = document.getElementById("combination-body-count");
+const combinationTurnRadiusInput = document.getElementById("combination-turn-radius");
+const combinationConfig = document.getElementById("combination-config");
+const combinationFields = document.getElementById("combination-fields");
+const combinationModeState = document.getElementById("combination-mode-state");
+const combinationModeNote = document.getElementById("combination-mode-note");
+const combinationActivateButton = document.getElementById("combination-activate-button");
+const combinationCalculateButton = document.getElementById("combination-calculate-button");
+const combinationStatus = document.getElementById("combination-status");
+const currentValidationCard = document.getElementById("current-validation-card");
+const currentValidationStatus = document.getElementById("current-validation-status");
+const currentValidationSummary = document.getElementById("current-validation-summary");
+const currentValidationChecks = document.getElementById("current-validation-checks");
+const currentSteeringInterpretation = document.getElementById("current-steering-interpretation");
+const currentSteeringStatus = document.getElementById("current-steering-status");
+const currentSteeringDetail = document.getElementById("current-steering-detail");
+const sweepValidationStepInput = document.getElementById("sweep-validation-step");
+const sweepValidationButton = document.getElementById("sweep-validation-button");
+const sweepValidationStatus = document.getElementById("sweep-validation-status");
+const sweepValidationVerdict = document.getElementById("sweep-validation-verdict");
+const sweepValidationSolved = document.getElementById("sweep-validation-solved");
+const sweepValidationClearance = document.getElementById("sweep-validation-clearance");
+const sweepValidationFailure = document.getElementById("sweep-validation-failure");
+const mechanismGraphBuildButton = document.getElementById("mechanism-graph-build-button");
+const mechanismGraphSolveButton = document.getElementById("mechanism-graph-solve-button");
+const mechanismGraphPointCount = document.getElementById("mechanism-graph-point-count");
+const mechanismGraphMemberCount = document.getElementById("mechanism-graph-member-count");
+const mechanismGraphAssignmentCount = document.getElementById("mechanism-graph-assignment-count");
+const mechanismGraphMapping = document.getElementById("mechanism-graph-mapping");
+const mechanismGraphStatus = document.getElementById("mechanism-graph-status");
+const mechanismGraphEditor = document.getElementById("mechanism-graph-editor");
+const mechanismGraphEditorStatus = document.getElementById("mechanism-graph-editor-status");
+const mechanismGraphApplyButton = document.getElementById("mechanism-graph-apply-button");
+const mechanismGraphAddPointButton = document.getElementById("mechanism-graph-add-point-button");
+const mechanismGraphAddMemberButton = document.getElementById("mechanism-graph-add-member-button");
+const mechanismGraphAddOutputButton = document.getElementById("mechanism-graph-add-output-button");
+const mechanismGraphAddDriverButton = document.getElementById("mechanism-graph-add-driver-button");
+const mechanismGraphAddAssignmentButton = document.getElementById("mechanism-graph-add-assignment-button");
+const mechanismPointEditor = document.getElementById("mechanism-point-editor");
+const mechanismMemberEditor = document.getElementById("mechanism-member-editor");
+const mechanismOutputEditor = document.getElementById("mechanism-output-editor");
+const mechanismDriverEditor = document.getElementById("mechanism-driver-editor");
+const mechanismAssignmentEditor = document.getElementById("mechanism-assignment-editor");
+
+const FAILURE_GUIDANCE = {
+  KINEMATICS: {
+    title: "Check body and joint geometry",
+    action: "Verify body dimensions, joint anchors, articulation bounds, and the explicit maneuver radius.",
+  },
+  MECHANISM: {
+    title: "Make the mechanism solvable",
+    action: "Check rigid member lengths, fixed and driven point positions, branch continuity, and wheel-output mappings.",
+  },
+  COLLISION: {
+    title: "Remove component overlap",
+    action: "Open Clearance focus, inspect the highlighted pair, then move the components or correct their envelopes. Connected joints are excluded; other overlaps are hard failures.",
+  },
+  CLEARANCE: {
+    title: "Increase minimum clearance",
+    action: "Move the conflicting pivot or link, or revise the envelope until the configured clearance target is met.",
+  },
+  STEERING_LIMIT_EXCEEDED: {
+    title: "Respect the steering stop",
+    action: "Change the linkage ratio or geometry, or confirm a larger physical steering stop. Do not treat the rod as an implicit stop.",
+  },
+  DRAWBAR_LIMIT_EXCEEDED: {
+    title: "Respect the articulation stop",
+    action: "Reduce the requested articulation range or update the approved drawbar limit.",
+  },
+  MULTIBODY_KINEMATIC_INCONSISTENT: {
+    title: "Resolve multi-body closure",
+    action: "Check joint anchors, body-local coordinates, and the common maneuver radius for the failing body.",
+  },
+  LINKAGE_NO_SOLUTION: {
+    title: "Check linkage reach",
+    action: "Adjust link lengths or pivot locations so the fixed-length circles intersect throughout the requested range.",
+  },
+  LINKAGE_BRANCH_CHANGE: {
+    title: "Prevent branch switching",
+    action: "Check the neutral assembly branch and incremental motion, then redesign near toggle positions.",
+  },
+  ACTUAL_STEERING_UNSOLVED: {
+    title: "Complete wheel mapping",
+    action: "Map every required wheel to a valid mechanism output and verify steering direction and ratio.",
+  },
+  OPTIMIZATION_NO_FEASIBLE_SOLUTION: {
+    title: "No feasible candidate",
+    action: "Relax only approved design bounds or targets, or change the mechanism. Do not apply an infeasible proposal.",
+  },
+};
 
 const DISPLAY_MODES = {
   simulation: {
@@ -251,10 +478,311 @@ const COMPANION_LINKAGE_FIELDS = [
   { key: "companion_tie_rod_length_mm", label: "Companion tie rod length", step: "1" },
 ];
 
+const WORKFLOW_COPY = {
+  project: ["01", "Project", "Open a design project or create a controlled starting revision."],
+  vehicle: ["02", "Vehicle", "Define the rigid bodies, articulation joints, mounted axles, and packaging geometry."],
+  maneuver: ["03", "Maneuver", "Set the articulation state and explicit maneuver radius, then inspect ideal steering."],
+  mechanism: ["04", "Mechanism", "Define the physical steering graph, linkage dimensions, and CAD assignments."],
+  validate: ["05", "Validate", "Review steering error, branch continuity, collisions, and minimum clearance."],
+  optimize: ["06", "Optimize", "Select bounded variables and search only for designs that satisfy every hard constraint."],
+  results: ["07", "Results", "Compare the controlled proposal, apply a passing design, and generate engineering outputs."],
+};
+
+function panelFor(element) {
+  return element?.closest(".wheel-table-card, .metric-card, .note-card") || null;
+}
+
+function initializeWorkflowPanels() {
+  const panelAssignments = new Map();
+  const assign = (step, ...elements) => {
+    for (const element of elements) {
+      const panel = panelFor(element);
+      if (panel) {
+        panelAssignments.set(panel, step);
+      }
+    }
+  };
+
+  assign("project", projectNameInput);
+  assign("vehicle", geometryApplyButton, combinationCalculateButton, bodyChainTable);
+  assign("maneuver", betaValue, radiusValue, maxAngleValue, phaseValue, wheelTable, steeringCurvesImage, sweptPathImage);
+  assign("mechanism", linkageConfig, linkageSteerValue, linkageErrorValue, linkageResidualValue, linkageBranchValue, dxfFileInput);
+  assign("validate", actualErrorValue, synchronizationErrorValue, clearanceValue, clearancePairValue, clearanceStatusValue);
+  assign("optimize", optimizeButton);
+  assign("results", exportJsonLink);
+
+  const directPanels = document.querySelectorAll(
+    ".info-panel > .wheel-table-card, .info-panel > .metric-card, .info-panel > .note-card",
+  );
+  for (const panel of directPanels) {
+    const explicitStep = panel.dataset.workflowPanel;
+    panel.dataset.workflowPanel = explicitStep || panelAssignments.get(panel) || "maneuver";
+  }
+}
+
+function setWorkflowStep(step) {
+  if (!Object.prototype.hasOwnProperty.call(WORKFLOW_COPY, step)) {
+    return;
+  }
+  state.activeWorkflowStep = step;
+  const [number, title, description] = WORKFLOW_COPY[step];
+  workflowStepNumber.textContent = `Step ${number}`;
+  workflowStepTitle.textContent = title;
+  workflowStepDescription.textContent = description;
+  for (const button of workflowSteps) {
+    button.classList.toggle("is-active", button.dataset.workflowStep === step);
+  }
+  for (const panel of document.querySelectorAll("[data-workflow-panel]")) {
+    panel.classList.toggle("workflow-panel-hidden", panel.dataset.workflowPanel !== step);
+  }
+  if (workflowGuide && step !== "project") {
+    workflowGuide.open = false;
+  }
+  renderWorkflowProgress();
+}
+
+function isLegacyRevisionMode() {
+  return Boolean(state.currentProjectId && !state.combinationActive && state.vehicleConfig);
+}
+
+function workflowStepStates() {
+  const hasProject = Boolean(state.currentProjectId);
+  const legacyRevision = isLegacyRevisionMode();
+  const hasVehicle = Boolean(state.combinationActive || state.vehicleConfig);
+  const hasManeuver = Boolean(state.maneuverResolved || state.currentPayload);
+  const hasMechanism = state.combinationActive
+    ? Boolean(state.mechanismGraph)
+    : Boolean(state.linkageConfig && state.currentPayload?.linkage);
+  const hasSolvedMechanism = state.combinationActive
+    ? Boolean(state.currentPayload?.mechanism_graph)
+    : Boolean(state.currentPayload?.linkage);
+  const hasFullRange = !state.combinationActive || state.sweepValidationPayload?.status === "PASS";
+  const hasValidation = Boolean(state.currentValidationPass && hasFullRange);
+  const hasOptimization = Boolean(state.optimizationPayload?.optimized);
+  const resultState = !hasProject || !hasManeuver || !hasSolvedMechanism
+    ? "WAIT"
+    : !state.currentValidationPass
+      ? "FAIL"
+      : !hasFullRange
+        ? "INCOMPLETE"
+        : "PASS";
+  return {
+    project: hasProject ? (state.workspaceDirty ? "EDITING" : "READY") : "START",
+    vehicle: legacyRevision ? "TODO" : (hasVehicle ? "READY" : "TODO"),
+    maneuver: legacyRevision ? "WAIT" : (hasManeuver ? "READY" : "TODO"),
+    mechanism: legacyRevision
+      ? "WAIT"
+      : (hasSolvedMechanism ? "PASS" : (hasMechanism ? "READY" : "TODO")),
+    validate: legacyRevision ? "WAIT" : (hasValidation ? "PASS" : (hasSolvedMechanism ? "TODO" : "WAIT")),
+    optimize: legacyRevision
+      ? "WAIT"
+      : (hasOptimization
+      ? (state.optimizationPayload.optimized.feasible === true ? "READY" : "FAIL")
+      : "OPTIONAL"),
+    results: legacyRevision ? "WAIT" : resultState,
+  };
+}
+
+function nextWorkflowAction() {
+  const hasProject = Boolean(state.currentProjectId);
+  const legacyRevision = isLegacyRevisionMode();
+  const hasVehicle = Boolean(state.combinationActive || state.vehicleConfig);
+  const hasManeuver = Boolean(state.maneuverResolved || state.currentPayload);
+  const hasMechanism = state.combinationActive
+    ? Boolean(state.mechanismGraph)
+    : Boolean(state.linkageConfig && state.currentPayload?.linkage);
+  const hasSolvedMechanism = state.combinationActive
+    ? Boolean(state.currentPayload?.mechanism_graph)
+    : Boolean(state.currentPayload?.linkage);
+  const hasFullRange = !state.combinationActive || state.sweepValidationPayload?.status === "PASS";
+
+  if (!hasProject) {
+    return {
+      step: "project",
+      title: "Open or create the project",
+      detail: "Start with a named project so every calculation and review decision is saved as a revision.",
+      button: "Go to Project",
+    };
+  }
+  if (legacyRevision) {
+    return {
+      step: "vehicle",
+      title: "Switch this revision to multi-body workflow",
+      detail: "This saved revision is the legacy single-layout study. Activate the explicit towing-combination model before continuing.",
+      button: "Use multi-body workflow",
+    };
+  }
+  if (!hasVehicle) {
+    return {
+      step: "vehicle",
+      title: "Define the towing combination",
+      detail: "Enter every body, axle, wheel envelope, articulation joint, and physical joint stop.",
+      button: "Go to Vehicle",
+    };
+  }
+  if (!hasManeuver) {
+    return {
+      step: "maneuver",
+      title: "Resolve the maneuver",
+      detail: "Set the signed root turn radius and calculate the current articulated pose.",
+      button: "Go to Maneuver",
+    };
+  }
+  if (!hasMechanism) {
+    return {
+      step: "mechanism",
+      title: state.combinationActive ? "Build and solve the mechanism graph" : "Apply the steering linkage",
+      detail: state.combinationActive
+        ? "Create the rigid links, driver arcs, outputs, and named wheel mappings, then solve them."
+        : "Define the physical linkage dimensions and apply the configuration before validation.",
+      button: "Go to Mechanism",
+    };
+  }
+  if (!hasSolvedMechanism) {
+    return {
+      step: "mechanism",
+      title: "Solve the mechanism graph",
+      detail: "The maneuver is resolved. Solve the configured mechanism to generate current-pose engineering evidence.",
+      button: "Go to Mechanism",
+    };
+  }
+  if (!state.currentValidationPass) {
+    return {
+      step: "validate",
+      title: "Resolve current-pose failures",
+      detail: "Review the failed hard check and its engineering guidance before running the full range.",
+      button: "Go to Validate",
+    };
+  }
+  if (!hasFullRange) {
+    return {
+      step: "validate",
+      title: "Run the full articulation validation",
+      detail: "Check every configured Cartesian combination of joint angles. A partial sweep cannot support approval.",
+      button: "Go to Validate",
+    };
+  }
+  return {
+    step: "results",
+    title: state.workspaceDirty ? "Save the validated revision" : "Review the engineering result",
+    detail: state.workspaceDirty
+      ? "Save this revision before submitting it for independent review or controlled release."
+      : "Compare actual versus ideal steering, inspect clearance, and use Optimize only for a feasible proposal.",
+    button: "Go to Results",
+  };
+}
+
+function renderWorkflowProgress() {
+  const states = workflowStepStates();
+  for (const button of workflowSteps) {
+    const step = button.dataset.workflowStep;
+    const status = states[step] || "WAIT";
+    button.dataset.workflowState = status;
+    button.setAttribute("aria-label", `${button.querySelector("strong")?.textContent || step} ${status}`);
+  }
+  const next = nextWorkflowAction();
+  if (workflowNextTitle && workflowNextDetail && workflowNextButton) {
+    workflowNextTitle.textContent = next.title;
+    workflowNextDetail.textContent = next.detail;
+    workflowNextButton.textContent = next.button;
+    workflowNextButton.dataset.workflowTarget = next.step;
+  }
+  renderProjectStartCard(next);
+  renderProjectDashboardStatus();
+}
+
+function renderProjectStartCard(next = nextWorkflowAction()) {
+  if (!projectStartCard || !projectStartTitle || !projectStartDetail || !projectStartButton) {
+    return;
+  }
+  const legacyRevision = isLegacyRevisionMode();
+  projectStartCard.dataset.status = !state.currentProjectId
+    ? "start"
+    : (legacyRevision ? "legacy" : "active");
+  projectStartTitle.textContent = !state.currentProjectId
+    ? "Create or open a project"
+    : next.title;
+  projectStartDetail.textContent = !state.currentProjectId
+    ? "Every calculation is saved as a named revision before review."
+    : next.detail;
+  projectStartButton.textContent = !state.currentProjectId
+    ? "Start setup"
+    : (legacyRevision ? "Use multi-body workflow" : `Continue: ${next.step[0].toUpperCase()}${next.step.slice(1)}`);
+  projectStartButton.dataset.workflowTarget = next.step;
+}
+
+function renderProjectDashboardStatus() {
+  if (!projectEngineeringState || !projectReviewState || !projectModelScope) {
+    return;
+  }
+
+  const hasRevision = Boolean(state.currentProjectId && state.activeProjectRevisionId);
+  const fullRangePass = state.combinationActive
+    ? state.sweepValidationPayload?.status === "PASS"
+    : state.activeRevisionHasFullRangeEvidence;
+  let engineeringStatus = "INCOMPLETE";
+  let engineeringDetail = "Run the current pose and full-range checks.";
+  if (!hasRevision) {
+    engineeringStatus = "NO REVISION";
+    engineeringDetail = "Create or open a project revision to begin.";
+  } else if (isLegacyRevisionMode()) {
+    engineeringStatus = "LEGACY";
+    engineeringDetail = "Legacy single-layout revision. Activate multi-body workflow before continuing.";
+  } else if (state.workspaceDirty) {
+    engineeringStatus = "EDITING";
+    engineeringDetail = "Unsaved changes invalidate the saved engineering evidence.";
+  } else if (!state.currentPayload) {
+    engineeringDetail = state.combinationActive && state.maneuverResolved && state.mechanismGraph
+      ? "Solve the physical mechanism to generate current-pose evidence."
+      : "Resolve the maneuver and solve the physical mechanism.";
+  } else if (!state.currentValidationPass) {
+    engineeringStatus = "FAIL";
+    engineeringDetail = "One or more current-pose hard checks failed.";
+  } else if (!fullRangePass) {
+    engineeringDetail = "Current pose passes; full-range evidence is still required.";
+  } else {
+    engineeringStatus = "PASS";
+    engineeringDetail = "Current pose and required range checks pass.";
+  }
+  projectEngineeringState.textContent = engineeringStatus;
+  projectEngineeringDetail.textContent = engineeringDetail;
+  projectEngineeringCard.dataset.status = engineeringStatus.toLowerCase().replace(" ", "-");
+
+  const reviewStatus = state.approvalStatus?.status || "draft";
+  const reviewLabels = {
+    draft: ["DRAFT", "Saved revision is not submitted for independent review."],
+    submitted: ["SUBMITTED", "Waiting for the assigned reviewer to decide."],
+    approved: ["APPROVED", "Independent approval is recorded for this revision."],
+    rejected: ["REJECTED", "Update the design, save a new revision, and resubmit."],
+  };
+  const [reviewLabel, reviewDetail] = reviewLabels[reviewStatus] || [reviewStatus.toUpperCase(), "Review state is recorded for this revision."];
+  projectReviewState.textContent = reviewLabel;
+  projectReviewDetail.textContent = hasRevision ? reviewDetail : "Save a revision before submitting it for review.";
+  projectReviewCard.dataset.status = reviewStatus;
+
+  const combination = state.currentPayload?.vehicle_combination;
+  const axles = state.currentPayload?.vehicle?.axle_count;
+  const bodies = combination?.body_count ?? combination?.bodies?.length;
+  if (Number.isFinite(Number(bodies)) && Number.isFinite(Number(axles))) {
+    projectModelScope.textContent = `${Number(bodies)} bodies / ${Number(axles)} axles`;
+    projectModelDetail.textContent = "Explicit articulated combination is active.";
+    projectScopeCard.dataset.status = "ready";
+  } else if (state.vehicleConfig?.axles?.length) {
+    projectModelScope.textContent = `${state.vehicleConfig.axles.length} axle study`;
+    projectModelDetail.textContent = "Legacy single-layout study. Use the multi-body workflow for towing combinations.";
+    projectScopeCard.dataset.status = "legacy";
+  } else {
+    projectModelScope.textContent = "n/a";
+    projectModelDetail.textContent = "Define the towing combination.";
+    projectScopeCard.dataset.status = "waiting";
+  }
+}
+
 function formatAngle(value) {
-  if (value === null || Number.isNaN(value)) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return "n/a";
   }
+  value = Number(value);
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)} deg`;
 }
@@ -288,12 +816,14 @@ function bodyOutlinePoints(body) {
   const halfLength = (body.body_length_mm ?? 0) / 2;
   const halfWidth = (body.body_width_mm ?? 0) / 2;
   const pose = body.pose || {};
-  const corners = [
-    { x_mm: -halfLength, y_mm: -halfWidth },
-    { x_mm: halfLength, y_mm: -halfWidth },
-    { x_mm: halfLength, y_mm: halfWidth },
-    { x_mm: -halfLength, y_mm: halfWidth },
-  ];
+  const corners = Array.isArray(body.body_polygon) && body.body_polygon.length >= 3
+    ? body.body_polygon
+    : [
+      { x_mm: -halfLength, y_mm: -halfWidth },
+      { x_mm: halfLength, y_mm: -halfWidth },
+      { x_mm: halfLength, y_mm: halfWidth },
+      { x_mm: -halfLength, y_mm: halfWidth },
+    ];
 
   return corners.map((corner) => {
     const world = transformBodyPoint(corner, pose);
@@ -321,6 +851,7 @@ function linkageFieldInput(field, value) {
   input.placeholder = field.optional ? "none" : "0";
   input.value = value === null || value === undefined ? "" : String(value);
   input.addEventListener("input", () => {
+    markWorkspaceDirty("Linkage inputs changed. Apply the linkage and save a new revision before review.");
     linkageConfigStatus.textContent = "Linkage edits are unapplied. Apply to solve the current design.";
   });
   label.appendChild(input);
@@ -713,7 +1244,10 @@ function updateDraggedAxlePreview(axleId, nextCenter) {
     y_mm: nextCenter.y_mm - previousCenter.y_mm,
   };
   payloadAxle.center = nextCenter;
-  for (const wheel of [payloadAxle.left_wheel, payloadAxle.right_wheel]) {
+  const wheels = Array.isArray(payloadAxle.wheels) && payloadAxle.wheels.length > 0
+    ? payloadAxle.wheels
+    : [payloadAxle.left_wheel, payloadAxle.right_wheel];
+  for (const wheel of wheels.filter(Boolean)) {
     wheel.center = {
       x_mm: wheel.center.x_mm + delta.x_mm,
       y_mm: wheel.center.y_mm + delta.y_mm,
@@ -735,28 +1269,34 @@ function lineFromHeading(point, headingRad, lengthMm) {
 function renderWheelTable(axles, actualSteering = null) {
   wheelTable.replaceChildren();
   const actualWheels = new Map(
-    (actualSteering?.axles || []).flatMap((axle) => [
-      [axle.left_wheel?.wheel_id, axle.left_wheel],
-      [axle.right_wheel?.wheel_id, axle.right_wheel],
-    ]),
+    (actualSteering?.axles || []).flatMap((axle) => {
+      const wheels = Array.isArray(axle.wheels) && axle.wheels.length > 0
+        ? axle.wheels
+        : [axle.left_wheel, axle.right_wheel];
+      return wheels
+        .filter(Boolean)
+        .map((wheel) => [wheel.wheel_id, wheel]);
+    }),
   );
   for (const axle of axles) {
-    for (const side of ["left_wheel", "right_wheel"]) {
-      const wheel = axle[side];
+    const wheels = Array.isArray(axle.wheels) && axle.wheels.length > 0
+      ? axle.wheels
+      : [axle.left_wheel, axle.right_wheel];
+    for (const wheel of wheels.filter(Boolean)) {
       const actualWheel = actualWheels.get(wheel.wheel_id);
       const row = document.createElement("div");
       row.className = "wheel-row";
       const label = document.createElement("span");
       label.className = "label";
-      label.textContent = `${axle.axle_id} ${wheel.side}`;
+      label.textContent = wheel.wheel_id || `${axle.axle_id} ${wheel.side}`;
       const value = document.createElement("span");
       value.className = "value";
       const idealAngle = wheel.steering_angle_deg ?? wheel.heading_deg;
       const actualAngle = actualWheel?.steering_angle_deg ?? actualSteering?.wheel_angles_deg?.[wheel.wheel_id];
       const error = actualSteering?.errors_deg?.[wheel.wheel_id];
       value.textContent = actualAngle === undefined
-        ? formatAngle(idealAngle)
-        : `I ${formatAngle(idealAngle)} / A ${formatAngle(actualAngle)} / E ${formatAngle(error)}`;
+        ? `Ideal: ${formatAngle(idealAngle)}`
+        : `Ideal: ${formatAngle(idealAngle)} / Actual: ${formatAngle(actualAngle)} / Error: ${formatAngle(error)}`;
       if (actualWheel?.source) {
         value.title = `Actual steering source: ${actualWheel.source}`;
       }
@@ -788,7 +1328,7 @@ function renderSynchronizationTable(payload) {
     const idealTarget = actual.synchronization_ideal_target_angles_deg?.[sync.id];
     const actualTarget = actual.axle_center_angles_deg?.[sync.target_axle_id];
     const error = actual.synchronization_errors_deg?.[sync.id];
-    value.textContent = `I ${formatAngle(idealTarget)} / A ${formatAngle(actualTarget)} / E ${formatAngle(error)}`;
+    value.textContent = `Ideal: ${formatAngle(idealTarget)} / Actual: ${formatAngle(actualTarget)} / Error: ${formatAngle(error)}`;
     row.append(label, value);
     synchronizationTable.appendChild(row);
   }
@@ -856,7 +1396,99 @@ function renderOptimizationVariableConfig(variables) {
 }
 
 function updateDxfApplyButtonState(enabled) {
-  dxfApplyButton.disabled = !enabled;
+  const metadataReady = Boolean(
+    state.dxfImportPayload
+      && dxfSourceUnits.value
+      && dxfCoordinateSystem.value,
+  );
+  const unsupportedCount = Number(state.dxfImportPayload?.unsupported_entity_count || 0);
+  const layoutReady = Boolean(state.dxfImportPayload?.reconstructed_vehicle);
+  dxfApplyButton.disabled = !enabled || !metadataReady || unsupportedCount > 0 || !layoutReady;
+  updateDxfSourceRetentionState();
+}
+
+function updateDxfSourceRetentionState() {
+  if (!dxfRetainSourceButton || !dxfSourceRetentionStatus) {
+    return;
+  }
+  const revisionCadSource = state.vehicleConfig?.cad_source;
+  const importedCadSource = state.dxfImportPayload?.import_ready === true
+    ? (state.dxfImportPayload.reconstructed_vehicle?.cad_source || state.dxfImportPayload.cad_source)
+    : null;
+  const confirmedCadSource = revisionCadSource
+    && importedCadSource
+    && revisionCadSource.source_name === importedCadSource.source_name
+    && revisionCadSource.source_sha256 === importedCadSource.source_sha256
+    ? importedCadSource
+    : null;
+  const hasConfirmedSource = Boolean(
+    state.dxfImportText
+      && confirmedCadSource?.metadata_confirmed === true
+      && confirmedCadSource.source_name
+      && state.dxfImportSourceName === confirmedCadSource.source_name,
+  );
+  const hasSavedRevision = Boolean(state.currentProjectId && state.activeProjectRevisionId);
+  if (state.cadSourceArtifact) {
+    dxfRetainSourceButton.disabled = true;
+    dxfSourceRetentionStatus.textContent = `Source retained as ${state.cadSourceArtifact.filename || "CAD artifact"} (${state.cadSourceArtifact.content_sha256 || "checksum recorded"}).`;
+    return;
+  }
+  dxfRetainSourceButton.disabled = !hasConfirmedSource
+    || !hasSavedRevision
+    || state.workspaceDirty
+    || state.artifactStorageBackend !== "filesystem";
+  if (!hasConfirmedSource) {
+    dxfSourceRetentionStatus.textContent = "Apply confirmed CAD assignments before retaining the exact source bytes.";
+  } else if (!hasSavedRevision) {
+    dxfSourceRetentionStatus.textContent = "Save this revision before retaining the exact source bytes.";
+  } else if (state.workspaceDirty) {
+    dxfSourceRetentionStatus.textContent = "Save the current workspace changes before retaining the source on this revision.";
+  } else if (state.artifactStorageBackend !== "filesystem") {
+    dxfSourceRetentionStatus.textContent = "Durable artifact storage is not configured; the source hash is retained, but bytes cannot be attached.";
+  } else {
+    dxfSourceRetentionStatus.textContent = "The exact confirmed source can now be attached to this saved revision.";
+  }
+}
+
+function renderDxfMetadata(payload, { activated = false } = {}) {
+  const detectedUnits = payload?.detected_units;
+  const sourceUnits = payload?.source_units;
+  const selectionReady = Boolean(
+    state.dxfImportText
+      && dxfSourceUnits.value
+      && dxfCoordinateSystem.value,
+  );
+  const selectedUnits = dxfSourceUnits.value || sourceUnits;
+  const unitText = selectedUnits && selectedUnits !== "unitless"
+    ? `Selected units: ${selectedUnits}`
+    : "Source units: not confirmed";
+  const headerText = detectedUnits
+    ? `DXF header reports ${detectedUnits}.`
+    : "DXF header does not declare units.";
+  const unsupportedCount = Number(payload?.unsupported_entity_count || 0);
+  if (unsupportedCount > 0) {
+    dxfMetadataStatus.textContent = `${unsupportedCount} unsupported DXF entr${unsupportedCount === 1 ? "y" : "ies"} were omitted. Re-export supported geometry before applying assignments.`;
+    dxfMetadataStatus.classList.add("warning");
+    return;
+  }
+  if (!payload?.reconstructed_vehicle) {
+    dxfMetadataStatus.textContent = "No valid vehicle layout was reconstructed. Assign a body envelope and axle centerlines, then correct any CAD geometry warnings before applying.";
+    dxfMetadataStatus.classList.add("warning");
+    return;
+  }
+  if (payload?.import_ready || selectionReady) {
+    const frameText = payload?.import_ready
+      ? "Axis frame confirmed for model use."
+      : "Axis frame selected for model use.";
+    const transformText = activated
+      ? "Source scaling and metadata were applied to the active layout."
+      : "Apply will rescale and record this source metadata.";
+    dxfMetadataStatus.textContent = `${unitText}. ${frameText} ${headerText} ${transformText}`;
+    dxfMetadataStatus.classList.remove("warning");
+    return;
+  }
+  dxfMetadataStatus.textContent = `${unitText}. ${headerText} Select both fields before applying assignments.`;
+  dxfMetadataStatus.classList.add("warning");
 }
 
 function updateDxfRowState(row, select) {
@@ -938,14 +1570,18 @@ function renderDxfEntities(payload) {
     dxfEntityTable.appendChild(row);
   }
 
-  dxfApplyButton.disabled = entities.length === 0 || !state.dxfImportText;
+  updateDxfApplyButtonState(entities.length > 0 && Boolean(state.dxfImportText));
 }
 
 function renderDxfImportSummary(payload) {
+  state.cadSourceArtifact = null;
   state.dxfImportPayload = payload;
   const bounds = payload.bounds_mm;
   const vehicle = payload.reconstructed_vehicle;
   const parametric = payload.parametric_mechanism;
+  const selectableUnits = new Set(["mm", "cm", "m", "in"]);
+  dxfSourceUnits.value = selectableUnits.has(payload.source_units) ? payload.source_units : "";
+  dxfCoordinateSystem.value = payload.coordinate_system || "";
   dxfEntityCount.textContent = String(payload.entity_count ?? 0);
   dxfSupportedCount.textContent = String(payload.supported_entity_count ?? 0);
   dxfBoundsValue.textContent = bounds
@@ -961,7 +1597,8 @@ function renderDxfImportSummary(payload) {
     ? payload.warnings.join(" | ")
     : `Imported ${payload.source_name || "DXF"}`;
   dxfImportStatus.textContent = warningText;
-  dxfApplyButton.disabled = !state.dxfImportText || !(payload.entities && payload.entities.length);
+  renderDxfMetadata(payload);
+  updateDxfApplyButtonState(Boolean(state.dxfImportText && payload.entities && payload.entities.length));
   renderDxfEntities(payload);
 }
 
@@ -971,6 +1608,38 @@ function formatTimestamp(isoString) {
     return isoString;
   }
   return value.toLocaleString();
+}
+
+const ROLE_PERMISSIONS = {
+  viewer: ["project:read", "report:read"],
+  designer: ["project:read", "project:write", "report:read", "job:submit", "revision:submit"],
+  reviewer: ["project:read", "report:read", "revision:approve", "audit:read"],
+  admin: ["project:read", "project:write", "report:read", "job:submit", "revision:submit", "revision:approve", "audit:read", "user:manage"],
+};
+
+function hasPermission(permission) {
+  if (!state.authRequired && !state.authPrincipal) {
+    return true;
+  }
+  return Boolean(state.authPrincipal && ROLE_PERMISSIONS[state.authPrincipal.role]?.includes(permission));
+}
+
+function renderAccessControlledControls() {
+  const canWrite = hasPermission("project:write");
+  projectCreateButton.disabled = !canWrite;
+  projectSaveButton.disabled = !canWrite;
+  projectNameInput.disabled = !canWrite;
+  projectNoteInput.disabled = !canWrite;
+  for (const action of projectRevisionList.querySelectorAll(".revision-action")) {
+    action.disabled = !canWrite;
+    action.title = action.disabled
+      ? "Sign in with designer or admin access to load a revision."
+      : "Load this revision";
+  }
+  if (state.authRequired && !state.authPrincipal && workspaceAccessCard) {
+    workspaceAccessCard.open = true;
+  }
+  setOptimizationProposalState(Boolean(state.optimizationPayload?.optimized?.feasible === true));
 }
 
 function renderProjectRevisions(project) {
@@ -996,6 +1665,10 @@ function renderProjectRevisions(project) {
     action.type = "button";
     action.className = "revision-action";
     action.textContent = "Load";
+    action.disabled = !hasPermission("project:write");
+    action.title = action.disabled
+      ? "Sign in with designer or admin access to load a revision."
+      : "Load this revision";
     action.addEventListener("click", () => restoreProjectRevision(revision.id));
 
     row.append(text, action);
@@ -1003,22 +1676,672 @@ function renderProjectRevisions(project) {
   }
 }
 
+function renderProjectSelector(projects, selectedId = null) {
+  if (!projectSelector) {
+    return;
+  }
+  projectSelector.replaceChildren();
+  if (!Array.isArray(projects) || projects.length === 0) {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "No projects yet";
+    projectSelector.appendChild(empty);
+    projectSelector.disabled = true;
+    return;
+  }
+  for (const project of projects) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = `${project.name || project.id} (${project.revision_count ?? 0} revisions)`;
+    projectSelector.appendChild(option);
+  }
+  projectSelector.value = selectedId && projects.some((project) => project.id === selectedId)
+    ? selectedId
+    : projects[0].id;
+  projectSelector.disabled = false;
+}
+
 function renderProjectSummary(project) {
   if (!project) {
+    state.activeProjectRevisionId = null;
+    state.approvalStatus = null;
+    state.approvalHistory = [];
+    state.acceptanceResult = null;
+    state.activeRevisionHasFullRangeEvidence = false;
     projectIdValue.textContent = "n/a";
     projectActiveRevisionValue.textContent = "n/a";
     projectRevisionCountValue.textContent = "0";
     projectRevisionList.replaceChildren();
+    renderMonrocAcceptance(null);
+    renderApprovalHistory();
+    renderReviewControls();
+    renderProjectDashboardStatus();
     return;
   }
 
+  state.activeProjectRevisionId = project.active_revision_id || null;
+  if (projectSelector) {
+    let option = [...projectSelector.options].find((item) => item.value === project.id);
+    if (!option) {
+      option = document.createElement("option");
+      option.value = project.id;
+      projectSelector.appendChild(option);
+    }
+    option.textContent = `${project.name || project.id} (${project.revision_count ?? project.revisions?.length ?? 0} revisions)`;
+    projectSelector.value = project.id;
+    projectSelector.disabled = false;
+  }
   projectIdValue.textContent = project.id;
   projectActiveRevisionValue.textContent = project.active_revision_id || "n/a";
   projectRevisionCountValue.textContent = String(project.revision_count ?? project.revisions?.length ?? 0);
   renderProjectRevisions(project);
+  renderReviewControls();
+  renderProjectDashboardStatus();
+}
+
+function renderFailureGuidance(element, guidanceOrIds) {
+  if (!element) {
+    return;
+  }
+  const guidance = (Array.isArray(guidanceOrIds) ? guidanceOrIds : [])
+    .map((item) => {
+      if (typeof item === "string") {
+        const fallback = FAILURE_GUIDANCE[item] || {
+          title: `Investigate ${item}`,
+          action: "Review the detailed failure and correct the design before saving or submitting this revision.",
+        };
+        return { check_id: item, ...fallback };
+      }
+      return item;
+    })
+    .filter((item) => item && item.title && item.action);
+  element.replaceChildren();
+  element.hidden = guidance.length === 0;
+  if (guidance.length === 0) {
+    return;
+  }
+  const heading = document.createElement("h4");
+  heading.textContent = "Next engineering actions";
+  const list = document.createElement("div");
+  list.className = "validation-guidance-list";
+  for (const item of guidance) {
+    const row = document.createElement("div");
+    row.className = "validation-guidance-item";
+    const title = document.createElement("strong");
+    title.textContent = item.check_id ? `${item.check_id}: ${item.title}` : item.title;
+    const action = document.createElement("p");
+    action.textContent = item.action;
+    row.append(title, action);
+    list.appendChild(row);
+  }
+  element.append(heading, list);
+}
+
+function renderApprovalHistory() {
+  if (!approvalHistory) {
+    return;
+  }
+  approvalHistory.replaceChildren();
+  const events = Array.isArray(state.approvalHistory) ? state.approvalHistory : [];
+  if (events.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "curve-note";
+    empty.textContent = "No approval events recorded.";
+    approvalHistory.appendChild(empty);
+    return;
+  }
+  const eventLabels = {
+    REVISION_SUBMITTED: "Submitted for review",
+    REVISION_APPROVED: "Approved",
+    REVISION_REJECTED: "Rejected",
+  };
+  for (const event of events) {
+    const row = document.createElement("div");
+    row.className = "approval-history-row";
+    const title = document.createElement("strong");
+    title.textContent = eventLabels[event.event_type] || event.event_type || "Approval event";
+    const meta = document.createElement("span");
+    meta.textContent = `${formatTimestamp(event.created_at)} | actor ${event.actor_user_id || "system"}`;
+    row.append(title, meta);
+    const note = event.metadata?.note;
+    if (note) {
+      const noteElement = document.createElement("p");
+      noteElement.textContent = note;
+      row.appendChild(noteElement);
+    }
+    approvalHistory.appendChild(row);
+  }
+}
+
+function acceptanceIsReleaseApproved(result) {
+  return result?.status === "PASS" && result?.criteria_approval?.status === "APPROVED";
+}
+
+function renderMonrocAcceptance(result) {
+  if (!acceptanceStatusNote || !acceptanceChecks || !acceptanceEvaluateButton) {
+    return;
+  }
+  const displayedResult = state.acceptanceCriteriaDirty ? null : result;
+  const status = displayedResult?.status || "NOT_CONFIGURED";
+  acceptanceStatusNote.dataset.status = status.toLowerCase();
+  if (status === "PASS") {
+    acceptanceStatusNote.textContent = acceptanceIsReleaseApproved(displayedResult)
+      ? `PASS: ${displayedResult.case_id} matches the approved Monroc profile and satisfies its limits.`
+      : `PASS: ${displayedResult.case_id} satisfies the entered Monroc limits, but the profile is not release-approved.`;
+  } else if (status === "FAIL") {
+    acceptanceStatusNote.textContent = `FAIL: ${displayedResult.case_id || "case"} does not satisfy one or more configured Monroc limits.`;
+  } else if (status === "UNAPPROVED") {
+    acceptanceStatusNote.textContent = `UNAPPROVED: ${displayedResult.message || "The entered limits do not match an approved Monroc profile."}`;
+  } else if (state.acceptanceCriteriaDirty) {
+    acceptanceStatusNote.textContent = "Acceptance criteria changed. Re-evaluate this saved revision before review.";
+  } else {
+    acceptanceStatusNote.textContent = "No Monroc criteria evaluated for this revision.";
+  }
+  acceptanceChecks.replaceChildren();
+  for (const check of displayedResult?.checks || []) {
+    const row = document.createElement("div");
+    row.className = "validation-check";
+    row.dataset.status = String(check.status || "FAIL").toLowerCase();
+    const checkStatus = document.createElement("strong");
+    checkStatus.textContent = check.status || "FAIL";
+    const detail = document.createElement("span");
+    detail.textContent = `${check.label || check.id}: ${check.detail || "No detail"}`;
+    row.append(checkStatus, detail);
+    acceptanceChecks.appendChild(row);
+  }
+  if (displayedResult?.criteria_approval) {
+    const profileRow = document.createElement("div");
+    profileRow.className = "validation-check";
+    profileRow.dataset.status = displayedResult.criteria_approval.status === "APPROVED" ? "pass" : "fail";
+    const profileStatus = document.createElement("strong");
+    profileStatus.textContent = displayedResult.criteria_approval.status;
+    const profileDetail = document.createElement("span");
+    profileDetail.textContent = `Acceptance profile: ${displayedResult.criteria_approval.message || "No profile detail"}`;
+    profileRow.append(profileStatus, profileDetail);
+    acceptanceChecks.appendChild(profileRow);
+  }
+  acceptanceEvaluateButton.disabled = !state.currentProjectId
+    || !state.activeProjectRevisionId
+    || !hasPermission("project:write");
+}
+
+function markAcceptanceCriteriaDirty() {
+  if (state.acceptanceCriteriaDirty) {
+    return;
+  }
+  state.acceptanceCriteriaDirty = true;
+  state.acceptanceResult = null;
+  renderMonrocAcceptance(null);
+  renderCurrentSteeringInterpretation(state.currentPayload);
+  renderReleaseChecklist();
+  updateExportLinks();
+}
+
+async function evaluateMonrocAcceptance() {
+  if (!state.currentProjectId || !state.activeProjectRevisionId) {
+    throw new Error("Save a project revision before evaluating Monroc acceptance.");
+  }
+  const caseId = acceptanceCaseIdInput.value.trim();
+  const limits = {
+    minimum_clearance_mm: Number(acceptanceMinClearanceInput.value),
+    maximum_wheel_error_deg: Number(acceptanceMaxWheelErrorInput.value),
+    maximum_synchronization_error_deg: Number(acceptanceMaxSyncErrorInput.value),
+    maximum_mechanism_residual_mm: Number(acceptanceMaxResidualInput.value),
+  };
+  if (!caseId || Object.values(limits).some((value) => !Number.isFinite(value) || value < 0)) {
+    throw new Error("Enter a case ID and non-negative numeric limits for every criterion.");
+  }
+
+  acceptanceEvaluateButton.disabled = true;
+  acceptanceStatusNote.dataset.status = "running";
+  acceptanceStatusNote.textContent = "Evaluating the saved revision against the configured Monroc limits...";
+  try {
+    const response = await fetch(
+      `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/acceptance`,
+      {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          criteria: {
+            case_id: caseId,
+            ...limits,
+            require_full_range: acceptanceRequireFullRangeInput.checked,
+          },
+        }),
+      },
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    state.acceptanceCriteriaDirty = false;
+    state.acceptanceResult = payload.acceptance || null;
+    renderMonrocAcceptance(state.acceptanceResult);
+    renderCurrentSteeringInterpretation(state.currentPayload);
+    renderReleaseChecklist();
+    updateExportLinks();
+  } finally {
+    if (!state.acceptanceResult || state.acceptanceResult.status !== "PASS") {
+      acceptanceEvaluateButton.disabled = !state.currentProjectId
+        || !state.activeProjectRevisionId
+        || !hasPermission("project:write");
+    }
+  }
+}
+
+function renderReleaseChecklist() {
+  if (!releaseChecklist || !releaseChecklistState || !releaseChecklistNote) {
+    return;
+  }
+  const hasRevision = Boolean(state.currentProjectId && state.activeProjectRevisionId);
+  const currentPass = hasRevision && !state.workspaceDirty && state.currentValidationPass;
+  const fullRangePass = hasRevision && !state.workspaceDirty && state.activeRevisionHasFullRangeEvidence;
+  const approval = state.approvalStatus;
+  const independentlyApproved = approval?.status === "approved"
+    && Boolean(approval.submitted_by)
+    && Boolean(approval.decided_by)
+    && approval.submitted_by !== approval.decided_by;
+  const acceptancePass = !state.acceptanceCriteriaDirty && acceptanceIsReleaseApproved(state.acceptanceResult);
+  const checklist = [
+    {
+      label: "Saved revision",
+      status: hasRevision && !state.workspaceDirty ? "pass" : "fail",
+      detail: !hasRevision
+        ? "Create or save a revision first."
+        : (state.workspaceDirty
+          ? "Unsaved workspace changes are present; save a new revision before review."
+          : `Revision ${state.activeProjectRevisionId} is loaded.`),
+    },
+    {
+      label: "Current hard checks",
+      status: currentPass ? "pass" : "fail",
+      detail: currentPass ? "Kinematics, mechanism, collision, and clearance checks pass." : "Run the current pose and resolve every hard-check failure.",
+    },
+    {
+      label: "Full articulation range",
+      status: fullRangePass ? "pass" : "fail",
+      detail: fullRangePass
+        ? "Saved evidence covers the configured articulation/design-case range."
+        : (state.combinationActive
+          ? "Run and save a passing full-range validation sweep."
+          : "Run a hard-feasible optimization and save the accepted result."),
+    },
+    {
+      label: "Monroc acceptance criteria",
+      status: acceptancePass
+        ? "pass"
+        : (["FAIL", "UNAPPROVED"].includes(state.acceptanceResult?.status) ? "fail" : "pending"),
+      detail: acceptancePass
+        ? `Case ${state.acceptanceResult.case_id} passes the configured Monroc limits.`
+        : (state.acceptanceResult?.status === "FAIL"
+          ? "Correct the failing acceptance criteria before approval."
+        : (state.acceptanceResult?.status === "UNAPPROVED"
+          ? "The entered limits are trial criteria only; use the configured approved Monroc profile before approval."
+          : "Enter signed-off Monroc limits and evaluate this revision.")),
+    },
+    {
+      label: "Independent approval",
+      status: independentlyApproved ? "pass" : (approval?.status === "rejected" ? "fail" : "pending"),
+      detail: independentlyApproved
+        ? `Approved by ${approval.decided_by}, separate from submitter ${approval.submitted_by}.`
+        : (approval?.status === "submitted"
+          ? "Waiting for a reviewer other than the submitting designer."
+          : "Submit the saved revision for independent review."),
+    },
+  ];
+  releaseChecklist.replaceChildren();
+  for (const item of checklist) {
+    const row = document.createElement("div");
+    row.className = "release-check";
+    row.dataset.status = item.status;
+    const status = document.createElement("strong");
+    status.textContent = item.status.toUpperCase();
+    const detail = document.createElement("span");
+    detail.textContent = `${item.label}: ${item.detail}`;
+    row.append(status, detail);
+    releaseChecklist.appendChild(row);
+  }
+  const ready = checklist.every((item) => item.status === "pass");
+  releaseChecklistState.dataset.status = ready ? "ready" : "blocked";
+  releaseChecklistState.textContent = ready ? "READY" : "BLOCKED";
+  releaseChecklistNote.textContent = ready
+    ? "All configured release gates pass. Manufacturing release still requires the approved Monroc process outside this prototype."
+    : (approval?.status === "approved" && !currentPass
+      ? "Approval does not override a failed current engineering check."
+      : "A passing calculation is necessary but not sufficient for manufacturing release.");
+  renderResultsDecision({ ready, currentPass, fullRangePass, acceptancePass, independentlyApproved });
+}
+
+function renderResultsDecision({ ready, currentPass, fullRangePass, acceptancePass, independentlyApproved }) {
+  if (!resultsDecisionCard || !resultsDecisionStatus || !resultsDecisionSummary || !resultsDecisionChecks || !resultsDecisionNote) {
+    return;
+  }
+  const currentStatus = state.currentPayload
+    ? (currentPass ? "PASS" : "FAIL")
+    : "NOT RUN";
+  const fullRangeStatus = state.combinationActive
+    ? (state.sweepValidationPayload?.status || "NOT RUN")
+    : (fullRangePass ? "PASS" : "NOT RUN");
+  const engineeringStatus = !state.currentPayload
+    ? "NOT RUN"
+    : !currentPass || fullRangeStatus === "FAIL"
+      ? "FAIL"
+      : fullRangeStatus !== "PASS"
+        ? "INCOMPLETE"
+        : "PASS";
+  const decisionChecks = [
+    { label: "Current pose hard checks", status: currentStatus },
+    { label: state.combinationActive ? "Full articulation range" : "Design-range evidence", status: fullRangeStatus },
+    { label: "Monroc acceptance", status: acceptancePass ? "PASS" : (state.acceptanceResult?.status === "FAIL" ? "FAIL" : (state.acceptanceResult?.status === "UNAPPROVED" ? "UNAPPROVED" : "PENDING")) },
+    { label: "Independent approval", status: independentlyApproved ? "PASS" : "PENDING" },
+    { label: "Manufacturing release", status: ready ? "READY" : "BLOCKED" },
+  ];
+  resultsDecisionCard.dataset.status = engineeringStatus === "PASS" && ready
+    ? "pass"
+    : engineeringStatus === "FAIL"
+      ? "fail"
+      : "pending";
+  resultsDecisionStatus.textContent = engineeringStatus;
+  resultsDecisionSummary.textContent = engineeringStatus === "PASS"
+    ? (ready
+      ? "Engineering checks pass and every release gate is complete."
+      : "The engineering checks pass, but this revision is not released.")
+    : engineeringStatus === "FAIL"
+      ? "This design is diagnostic only. Resolve the failed hard check before review or release."
+      : "The engineering decision is incomplete. Run the current pose and full-range validation before interpreting the result.";
+  resultsDecisionChecks.replaceChildren();
+  for (const item of decisionChecks) {
+    const row = document.createElement("div");
+    row.className = "decision-check";
+    row.dataset.status = item.status.toLowerCase();
+    const status = document.createElement("strong");
+    status.textContent = item.status;
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    row.append(status, label);
+    resultsDecisionChecks.appendChild(row);
+  }
+  resultsDecisionNote.textContent = ready
+    ? "Controlled release is available only for this saved, accepted, independently approved revision."
+    : engineeringStatus === "FAIL"
+      ? "Do not apply or export this result as an approved design. Diagnostic exports remain available for troubleshooting."
+      : "Diagnostic results are not a manufacturing release. Complete validation, signed-off Monroc criteria, and independent approval.";
+}
+
+function renderReviewerOptions() {
+  if (!reviewerSelector) {
+    return;
+  }
+  const selectedReviewerId = state.approvalStatus?.assigned_reviewer_id || "";
+  reviewerSelector.replaceChildren();
+  const unassigned = document.createElement("option");
+  unassigned.value = "";
+  unassigned.textContent = "Unassigned: any eligible reviewer";
+  reviewerSelector.appendChild(unassigned);
+  const eligibleUsers = state.reviewerUsers.filter((user) => ["reviewer", "admin"].includes(user.role));
+  for (const user of eligibleUsers) {
+    const option = document.createElement("option");
+    option.value = user.user_id;
+    option.textContent = `${user.display_name} (${user.email})`;
+    reviewerSelector.appendChild(option);
+  }
+  if (selectedReviewerId && !eligibleUsers.some((user) => user.user_id === selectedReviewerId)) {
+    const unknown = document.createElement("option");
+    unknown.value = selectedReviewerId;
+    unknown.textContent = `Assigned user ${selectedReviewerId} (not available)`;
+    reviewerSelector.appendChild(unknown);
+  }
+  reviewerSelector.value = selectedReviewerId;
+  reviewerSelector.disabled = !hasPermission("user:manage")
+    || state.approvalStatus?.status === "approved";
+}
+
+function eligibleReviewerCount() {
+  return state.reviewerUsers.filter((user) => ["reviewer", "admin"].includes(user.role)).length;
+}
+
+function renderReviewControls() {
+  const status = state.approvalStatus?.status || "draft";
+  const role = state.authPrincipal?.role || (state.authRequired ? null : "admin");
+  const hasRevision = Boolean(state.currentProjectId && state.activeProjectRevisionId);
+  const assignedReviewerId = state.approvalStatus?.assigned_reviewer_id || null;
+  const canSubmit = hasRevision
+    && ["designer", "admin"].includes(role)
+    && !["submitted", "approved"].includes(status)
+    && !state.acceptanceCriteriaDirty
+    && !state.workspaceDirty;
+  const canDecide = hasRevision
+    && ["reviewer", "admin"].includes(role)
+    && status === "submitted"
+    && (!assignedReviewerId || assignedReviewerId === state.authPrincipal?.user_id);
+  reviewState.textContent = status.toUpperCase();
+  reviewState.dataset.status = status;
+  reviewSubmitButton.disabled = !canSubmit;
+  reviewApproveButton.disabled = !canDecide;
+  reviewRejectButton.disabled = !canDecide;
+  renderReviewerOptions();
+  const assignedReviewer = state.reviewerUsers.find(
+    (user) => user.user_id === state.approvalStatus?.assigned_reviewer_id,
+  );
+  const canAssignReviewer = hasRevision
+    && hasPermission("user:manage")
+    && status !== "approved";
+  reviewerAssignButton.disabled = !canAssignReviewer
+    || reviewerSelector.value === (state.approvalStatus?.assigned_reviewer_id || "");
+  if (!canAssignReviewer) {
+    reviewerAssignmentStatus.textContent = state.authRequired && !state.authPrincipal
+      ? "Sign in as an administrator to route this revision."
+      : "Only an administrator can route a revision to an independent reviewer.";
+  } else if (eligibleReviewerCount() === 0) {
+    reviewerAssignmentStatus.textContent = "No active reviewer accounts are available in this organization.";
+  } else if (assignedReviewer) {
+    reviewerAssignmentStatus.textContent = `Currently assigned to ${assignedReviewer.display_name} (${assignedReviewer.email}).`;
+  } else if (state.approvalStatus?.assigned_reviewer_id) {
+    reviewerAssignmentStatus.textContent = `Currently assigned to user ${state.approvalStatus.assigned_reviewer_id}, which is not available.`;
+  } else {
+    reviewerAssignmentStatus.textContent = "Assigning a reviewer makes the review owner explicit; the submitter still cannot self-approve.";
+  }
+  if (state.authRequired && !state.authPrincipal) {
+    reviewStatusNote.textContent = "Sign in to submit or independently review this revision.";
+  } else if (role === "viewer") {
+    reviewStatusNote.textContent = "Viewer access is read-only. A designer must submit the revision for review.";
+  } else if (!hasRevision) {
+    reviewStatusNote.textContent = "Save a revision before submitting it for independent review.";
+  } else if (state.workspaceDirty) {
+    reviewStatusNote.textContent = "Unsaved workspace changes are present. Save a new revision before submitting it for review.";
+  } else if (state.acceptanceCriteriaDirty) {
+    reviewStatusNote.textContent = "Acceptance criteria changed. Re-evaluate the saved revision before submitting it for review.";
+  } else if (status === "draft") {
+    reviewStatusNote.textContent = "Draft revision. Submit the saved engineering evidence when it is ready for review.";
+  } else if (status === "submitted") {
+    reviewStatusNote.textContent = assignedReviewerId
+      ? "Submitted and routed to the assigned reviewer. Only that reviewer can decide this revision."
+      : "Submitted. A reviewer must check the engineering PASS and decide independently.";
+  } else if (status === "approved") {
+    reviewStatusNote.textContent = "Approved by an independent reviewer. This status does not override a failed engineering check.";
+  } else {
+    reviewStatusNote.textContent = "Rejected. Update the design, save a new revision, and submit it again.";
+  }
+  renderReleaseChecklist();
+  renderProjectDashboardStatus();
+}
+
+async function loadApprovalStatus() {
+  if (!state.currentProjectId || !state.activeProjectRevisionId) {
+    state.approvalStatus = null;
+    state.approvalHistory = [];
+    renderApprovalHistory();
+    renderReviewControls();
+    return;
+  }
+  try {
+    const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/approval`;
+    const response = await fetch(path, { headers: authHeaders() });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ` + response.status);
+    }
+    state.approvalStatus = payload.approval;
+  } catch (error) {
+    state.approvalStatus = null;
+    reviewStatusNote.textContent = `Review state unavailable: ${error.message}`;
+  }
+  await loadApprovalHistory();
+  renderReviewControls();
+}
+
+async function loadApprovalHistory() {
+  if (!state.currentProjectId || !state.activeProjectRevisionId) {
+    state.approvalHistory = [];
+    renderApprovalHistory();
+    return;
+  }
+  try {
+    const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/approval-history`;
+    const response = await fetch(path, { headers: authHeaders() });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ` + response.status);
+    }
+    state.approvalHistory = Array.isArray(payload.events) ? payload.events : [];
+  } catch (error) {
+    state.approvalHistory = [];
+  }
+  renderApprovalHistory();
+}
+
+async function assignReviewer() {
+  if (!state.currentProjectId || !state.activeProjectRevisionId || !reviewerSelector) {
+    return;
+  }
+  reviewerAssignButton.disabled = true;
+  reviewerAssignmentStatus.textContent = "Saving reviewer assignment...";
+  try {
+    const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/reviewer`;
+    const response = await fetch(path, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ reviewer_user_id: reviewerSelector.value || null }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    state.approvalStatus = payload.approval;
+    await loadApprovalHistory();
+    renderReviewControls();
+  } finally {
+    renderReviewControls();
+  }
+}
+
+async function submitRevisionForReview() {
+  if (!state.currentProjectId || !state.activeProjectRevisionId) {
+    return;
+  }
+  reviewSubmitButton.disabled = true;
+  const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/submit`;
+  const response = await fetch(path, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ note: projectNoteInput.value || "Submitted for independent review" }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.message || `HTTP ` + response.status);
+  }
+  state.approvalStatus = payload.approval;
+  await loadApprovalHistory();
+  renderReviewControls();
+}
+
+async function decideRevision(approved) {
+  if (!state.currentProjectId || !state.activeProjectRevisionId) {
+    return;
+  }
+  const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/approval`;
+  const response = await fetch(path, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      approved,
+      note: projectNoteInput.value || (approved ? "Independent review complete" : "Revision requires changes"),
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.message || `HTTP ` + response.status);
+  }
+  state.approvalStatus = payload.approval;
+  await loadApprovalHistory();
+  renderReviewControls();
+  updateExportLinks();
 }
 
 function updateExportLinks() {
+  renderWorkflowProgress();
+  const exportLinks = [
+    exportJsonLink,
+    exportCsvLink,
+    exportPdfLink,
+    exportPngLink,
+    exportSvgLink,
+    exportDxfLink,
+    exportReleaseLink,
+  ];
+  const releaseEngineeringReady = !state.workspaceDirty
+    && state.currentValidationPass
+    && state.activeRevisionHasFullRangeEvidence
+    && acceptanceIsReleaseApproved(state.acceptanceResult);
+  if (state.combinationActive) {
+    for (const link of exportLinks) {
+      link.href = "#";
+      link.setAttribute("aria-disabled", "true");
+      link.title = "Manufacturing export requires a validated and controlled multi-body revision.";
+    }
+    if (state.currentProjectId && state.activeProjectRevisionId) {
+      const base = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}`;
+      for (const [link, extension] of [
+        [exportJsonLink, "json"],
+        [exportCsvLink, "csv"],
+        [exportPdfLink, "pdf"],
+        [exportPngLink, "png"],
+        [exportSvgLink, "svg"],
+        [exportDxfLink, "dxf"],
+      ]) {
+        link.href = `${base}/export.${extension}`;
+        link.removeAttribute("aria-disabled");
+        link.removeAttribute("title");
+      }
+      if (state.approvalStatus?.status === "approved" && releaseEngineeringReady) {
+        exportReleaseLink.href = `${base}/release.json`;
+        exportReleaseLink.removeAttribute("aria-disabled");
+        exportReleaseLink.removeAttribute("title");
+      } else {
+        exportReleaseLink.title = "Engineering PASS, Monroc acceptance PASS, and independent approval are required.";
+      }
+    }
+    exportNote.textContent = state.approvalStatus?.status === "approved" && releaseEngineeringReady
+      ? "Diagnostic evidence and the controlled release manifest are available. The manifest is tied to this approved revision."
+      : "Diagnostic JSON, CSV, PDF, SVG, DXF, and PNG are available. The controlled release manifest stays blocked until engineering PASS, Monroc acceptance PASS, and independent approval.";
+    return;
+  }
+  for (const link of exportLinks) {
+    link.removeAttribute("aria-disabled");
+    link.removeAttribute("title");
+  }
+  if (state.currentProjectId && state.activeProjectRevisionId && state.approvalStatus?.status === "approved" && releaseEngineeringReady) {
+    exportReleaseLink.href = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/release.json`;
+    exportReleaseLink.removeAttribute("aria-disabled");
+    exportReleaseLink.removeAttribute("title");
+  } else {
+    exportReleaseLink.href = "#";
+    exportReleaseLink.setAttribute("aria-disabled", "true");
+    exportReleaseLink.title = "Save, validate, evaluate Monroc acceptance, and independently approve a project revision first.";
+  }
+  exportNote.textContent = state.approvalStatus?.status === "approved" && releaseEngineeringReady
+    ? "Diagnostic exports and the controlled release manifest are available for this independently approved revision."
+    : "Diagnostic exports use the current beta and optimization mode. The controlled release manifest requires engineering PASS, Monroc acceptance PASS, and independent approval.";
   const betaDeg = Number(betaSlider.value);
   const mode = optimizeMode.value;
   const linkageQuery = state.linkageConfig
@@ -1068,7 +2391,6 @@ async function importSelectedDxfFile() {
     }
     renderDxfImportSummary(payload);
     dxfImportButton.textContent = "Re-import";
-    dxfApplyButton.disabled = false;
   } catch (error) {
     if (requestId === state.dxfImportRequest) {
       dxfImportStatus.textContent = `DXF import failed: ${error.message}`;
@@ -1112,6 +2434,9 @@ async function applyDxfAssignments() {
       body: JSON.stringify({
         source_name: state.dxfImportSourceName,
         dxf_text: state.dxfImportText,
+        source_units: dxfSourceUnits.value,
+        coordinate_system: dxfCoordinateSystem.value,
+        confirm_metadata: true,
         role_overrides: collectDxfRoleOverrides(),
       }),
     });
@@ -1125,6 +2450,7 @@ async function applyDxfAssignments() {
     }
     renderDxfImportSummary(payload);
     const activated = await activateImportedVehicle(payload);
+    renderDxfMetadata(payload, { activated });
     dxfImportStatus.textContent = activated
       ? `Applied assignments and activated the parametric layout from ${state.dxfImportSourceName || "DXF"}.`
       : `Applied manual assignments for ${state.dxfImportSourceName || "DXF"}.`;
@@ -1140,14 +2466,108 @@ async function applyDxfAssignments() {
   }
 }
 
+async function retainDxfSource() {
+  if (!state.currentProjectId || !state.activeProjectRevisionId || !state.dxfImportText) {
+    dxfSourceRetentionStatus.textContent = "Save a confirmed DXF assignment as a revision before retaining its source.";
+    return;
+  }
+  dxfRetainSourceButton.disabled = true;
+  dxfSourceRetentionStatus.textContent = "Retaining the exact source bytes on this revision...";
+  try {
+    const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/cad-source`;
+    const response = await fetch(path, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        source_name: state.dxfImportSourceName,
+        dxf_text: state.dxfImportText,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    state.cadSourceArtifact = payload.artifact || null;
+    updateDxfSourceRetentionState();
+    dxfImportStatus.textContent = `Confirmed DXF source retained on revision ${state.activeProjectRevisionId}.`;
+  } catch (error) {
+    dxfSourceRetentionStatus.textContent = `CAD source retention failed: ${error.message}`;
+    updateDxfSourceRetentionState();
+  }
+}
+
+let diagnosticPreviewRequest = 0;
+
+function clearDiagnosticPreview(image) {
+  const objectUrl = image.dataset.previewObjectUrl;
+  if (objectUrl) {
+    URL.revokeObjectURL(objectUrl);
+    delete image.dataset.previewObjectUrl;
+  }
+  image.removeAttribute("src");
+}
+
+async function loadDiagnosticPreview(image, statusElement, url, label) {
+  const requestId = ++diagnosticPreviewRequest;
+  clearDiagnosticPreview(image);
+  statusElement.dataset.status = "pending";
+  statusElement.textContent = `Loading ${label.toLowerCase()}...`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const payload = await response.json();
+        message = payload.message || message;
+      } catch (_error) {
+        // Keep the HTTP status when the failed response is not JSON.
+      }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    if (requestId !== diagnosticPreviewRequest) {
+      return;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    image.src = objectUrl;
+    image.dataset.previewObjectUrl = objectUrl;
+    statusElement.dataset.status = "ready";
+    statusElement.textContent = `${label} generated from the current study.`;
+  } catch (error) {
+    if (requestId !== diagnosticPreviewRequest) {
+      return;
+    }
+    statusElement.dataset.status = "fail";
+    statusElement.textContent = `${label} unavailable: ${error.message}. Resolve the current engineering checks to regenerate it.`;
+  }
+}
+
+function blockDiagnosticPreview(image, statusElement, label) {
+  if (!state.currentPayload || state.currentValidationPass) {
+    return false;
+  }
+  clearDiagnosticPreview(image);
+  statusElement.dataset.status = "blocked";
+  statusElement.textContent = `${label} unavailable until the current engineering checks pass.`;
+  return true;
+}
+
 function refreshSteeringCurvesPreview(betaDeg = Number(betaSlider.value)) {
+  if (blockDiagnosticPreview(steeringCurvesImage, steeringCurvesStatus, "Steering curve preview")) {
+    return;
+  }
   const mode = optimizeMode.value;
   const stepDeg = readCurveStep();
   const linkageQuery = state.linkageConfig
     ? `&linkage=${encodeURIComponent(JSON.stringify(serializedLinkageConfig()))}`
     : "";
   const query = `beta_deg=${encodeURIComponent(betaDeg)}&mode=${encodeURIComponent(mode)}&${geometryQuery()}&step_deg=${encodeURIComponent(stepDeg)}&beta_min_deg=${encodeURIComponent(state.betaRange.minDeg)}&beta_max_deg=${encodeURIComponent(state.betaRange.maxDeg)}${linkageQuery}${vehicleConfigQuery()}`;
-  steeringCurvesImage.src = `/api/steering-curves.svg?${query}`;
+  void loadDiagnosticPreview(
+    steeringCurvesImage,
+    steeringCurvesStatus,
+    `/api/steering-curves.svg?${query}`,
+    "Steering curve preview",
+  );
 }
 
 function geometryQuery() {
@@ -1179,6 +2599,7 @@ function defaultCustomAxle(index, count) {
     y_mm: 0,
     track_mm: state.geometry.trackMm,
     wheel_count: 2,
+    wheel_lateral_offsets_mm: "",
     steering_mode: "FORCED_STEER",
     steerable: true,
     heading_rad: 0,
@@ -1203,6 +2624,50 @@ function targetCurveText(curve) {
     const angleDeg = point.steering_angle_deg ?? Number(point.steering_angle_rad) * 180 / Math.PI;
     return `${Number(betaDeg).toFixed(1)}:${Number(angleDeg).toFixed(1)}`;
   }).join(", ");
+}
+
+function wheelOffsetText(offsets) {
+  return Array.isArray(offsets) ? offsets.map((offset) => Number(offset).toFixed(1)).join(", ") : "";
+}
+
+function parseWheelLateralOffsets(value, wheelCount) {
+  const text = String(value || "").trim();
+  if (!text) {
+    if (wheelCount === 2) return null;
+    throw new Error("Multi-wheel axles require one lateral offset per wheel, in mm (+left)." );
+  }
+  const offsets = text.split(/[,;\s]+/).filter(Boolean).map(Number);
+  if (offsets.length !== wheelCount) {
+    throw new Error(`Enter exactly ${wheelCount} lateral offsets for this axle.`);
+  }
+  if (offsets.some((offset) => !Number.isFinite(offset) || Math.abs(offset) < 1e-9)) {
+    throw new Error("Wheel lateral offsets must be finite and non-zero; positive values are left.");
+  }
+  if (new Set(offsets).size !== offsets.length) {
+    throw new Error("Wheel lateral offsets must be unique.");
+  }
+  const leftCount = offsets.filter((offset) => offset > 0).length;
+  if (leftCount * 2 !== wheelCount) {
+    throw new Error("Wheel lateral offsets must contain the same number of left and right positions.");
+  }
+  return offsets;
+}
+
+function wheelIdsForAxle(axle) {
+  const wheelCount = Math.max(2, Math.trunc(Number(axle.wheelCount ?? axle.wheel_count ?? 2)));
+  const offsets = parseWheelLateralOffsets(
+    axle.wheelLateralOffsetsText ?? axle.wheel_lateral_offsets_mm,
+    wheelCount,
+  );
+  if (wheelCount === 2) {
+    return [`${axle.id}_left`, `${axle.id}_right`];
+  }
+  const left = offsets.filter((offset) => offset > 0).sort((a, b) => b - a);
+  const right = offsets.filter((offset) => offset < 0).sort((a, b) => a - b);
+  return [
+    ...left.map((_offset, index) => `${axle.id}_left_${index + 1}`),
+    ...right.map((_offset, index) => `${axle.id}_right_${index + 1}`),
+  ];
 }
 
 function parseTargetCurve(value) {
@@ -1246,7 +2711,8 @@ function renderCustomAxleConfig() {
       ["x_mm", "X", false],
       ["y_mm", "Y", false],
       ["track_mm", "Track", false],
-      ["wheel_count", "Wheels", false],
+      ["wheel_count", "Wheel count", false],
+      ["wheel_lateral_offsets_mm", "Wheel offsets mm (+left)", false],
       ["heading_deg", "Heading deg", false],
       ["maximum_steering_angle_deg", "Max steer", true],
       ["steering_stop_deg", "Stop", true],
@@ -1259,20 +2725,25 @@ function renderCustomAxleConfig() {
       const label = document.createElement("label");
       label.textContent = labelText;
       const input = document.createElement("input");
-      input.type = "number";
+      input.type = key === "wheel_lateral_offsets_mm" ? "text" : "number";
       input.step = "1";
       if (key === "wheel_count") {
         input.min = "2";
+        input.max = "12";
+        input.step = "2";
       }
       input.value = axle[key] === null || axle[key] === undefined ? "" : String(axle[key]);
       input.dataset.axleIndex = String(index);
       input.dataset.axleKey = key;
       input.addEventListener("input", (event) => {
+        markWorkspaceDirty("Axle inputs changed. Recalculate and save a new revision before review.");
         const target = event.target;
         const rawValue = target.value.trim();
-        state.customAxles[index][key] = fields.find((item) => item[0] === key)?.[2] && rawValue === ""
-          ? null
-          : Number(rawValue);
+        state.customAxles[index][key] = key === "wheel_lateral_offsets_mm"
+          ? rawValue
+          : fields.find((item) => item[0] === key)?.[2] && rawValue === ""
+            ? null
+            : Number(rawValue);
         if (key === "heading_deg") {
           state.customAxles[index].heading_rad = Number(rawValue || 0) * Math.PI / 180;
         }
@@ -1293,6 +2764,7 @@ function renderCustomAxleConfig() {
       mode.appendChild(option);
     }
     mode.addEventListener("change", (event) => {
+      markWorkspaceDirty("Axle steering mode changed. Recalculate and save a new revision before review.");
       state.customAxles[index].steering_mode = event.target.value;
       state.customAxles[index].steerable = event.target.value !== "FIXED";
     });
@@ -1310,6 +2782,7 @@ function renderCustomAxleConfig() {
       syncMode.appendChild(option);
     }
     syncMode.addEventListener("change", (event) => {
+      markWorkspaceDirty("Axle synchronization changed. Recalculate and save a new revision before review.");
       state.customAxles[index].sync_mode = event.target.value;
     });
     syncModeLabel.appendChild(syncMode);
@@ -1334,6 +2807,7 @@ function renderCustomAxleConfig() {
     }
     syncSource.value = axle.sync_source_axle_id || "";
     syncSource.addEventListener("change", (event) => {
+      markWorkspaceDirty("Axle synchronization source changed. Recalculate and save a new revision before review.");
       state.customAxles[index].sync_source_axle_id = event.target.value || null;
     });
     syncSourceLabel.appendChild(syncSource);
@@ -1346,6 +2820,7 @@ function renderCustomAxleConfig() {
     syncRatio.step = "0.01";
     syncRatio.value = String(axle.sync_ratio ?? 1);
     syncRatio.addEventListener("input", (event) => {
+      markWorkspaceDirty("Axle synchronization ratio changed. Recalculate and save a new revision before review.");
       state.customAxles[index].sync_ratio = Number(event.target.value);
     });
     syncRatioLabel.appendChild(syncRatio);
@@ -1358,6 +2833,7 @@ function renderCustomAxleConfig() {
     syncPhase.step = "0.1";
     syncPhase.value = String(axle.sync_phase_offset_deg ?? 0);
     syncPhase.addEventListener("input", (event) => {
+      markWorkspaceDirty("Axle synchronization phase changed. Recalculate and save a new revision before review.");
       state.customAxles[index].sync_phase_offset_deg = Number(event.target.value);
     });
     syncPhaseLabel.appendChild(syncPhase);
@@ -1371,6 +2847,7 @@ function renderCustomAxleConfig() {
     targetCurveInput.value = targetCurveText(axle.sync_target_curve);
     targetCurveInput.title = "Use comma-separated beta:steering-angle degree pairs.";
     targetCurveInput.addEventListener("change", (event) => {
+      markWorkspaceDirty("Steering target curve changed. Recalculate and save a new revision before review.");
       try {
         state.customAxles[index].sync_target_curve = parseTargetCurve(event.target.value);
         state.customAxles[index].sync_target_curve_error = null;
@@ -1423,6 +2900,7 @@ function renderDesignCases() {
     nameInput.type = "text";
     nameInput.value = caseValue.name;
     nameInput.addEventListener("input", (event) => {
+      markWorkspaceDirty("Design case changed. Save a new revision before review.");
       state.designCases[index].name = event.target.value;
     });
     nameLabel.appendChild(nameInput);
@@ -1439,6 +2917,7 @@ function renderDesignCases() {
       targetSelect.appendChild(option);
     }
     targetSelect.addEventListener("change", (event) => {
+      markWorkspaceDirty("Design case target changed. Save a new revision before review.");
       const nextTarget = event.target.value;
       const next = { ...state.designCases[index], beta_deg: null, turn_radius_mm: null, outer_diameter_mm: null };
       next[nextTarget] = nextTarget === "beta_deg" ? 0 : 10000;
@@ -1455,6 +2934,7 @@ function renderDesignCases() {
     valueInput.step = "0.1";
     valueInput.value = String(caseValue[target]);
     valueInput.addEventListener("input", (event) => {
+      markWorkspaceDirty("Design case changed. Save a new revision before review.");
       state.designCases[index][target] = Number(event.target.value);
     });
     valueLabel.appendChild(valueInput);
@@ -1472,6 +2952,7 @@ function renderDesignCases() {
     }
     directionSelect.disabled = target !== "outer_diameter_mm";
     directionSelect.addEventListener("change", (event) => {
+      markWorkspaceDirty("Design case direction changed. Save a new revision before review.");
       state.designCases[index].direction = event.target.value;
     });
     directionLabel.appendChild(directionSelect);
@@ -1485,6 +2966,7 @@ function renderDesignCases() {
     weightInput.step = "0.1";
     weightInput.value = String(caseValue.weight);
     weightInput.addEventListener("input", (event) => {
+      markWorkspaceDirty("Design case weight changed. Save a new revision before review.");
       state.designCases[index].weight = Number(event.target.value);
     });
     weightLabel.appendChild(weightInput);
@@ -1497,6 +2979,7 @@ function renderDesignCases() {
     enabledInput.type = "checkbox";
     enabledInput.checked = caseValue.enabled !== false;
     enabledInput.addEventListener("change", (event) => {
+      markWorkspaceDirty("Design case selection changed. Save a new revision before review.");
       state.designCases[index].enabled = event.target.checked;
     });
     enabledLabel.appendChild(enabledInput);
@@ -1508,6 +2991,7 @@ function renderDesignCases() {
     removeButton.textContent = "x";
     removeButton.title = "Remove design case";
     removeButton.addEventListener("click", () => {
+      markWorkspaceDirty("Design case removed. Save a new revision before review.");
       state.designCases.splice(index, 1);
       renderDesignCases();
     });
@@ -1538,22 +3022,26 @@ function serializedVehicleConfig() {
   if (invalidTargetCurve) {
     throw new Error(`Target curve for ${invalidTargetCurve.id} is invalid: ${invalidTargetCurve.sync_target_curve_error}`);
   }
-  const serializedAxles = state.customAxles.map((axle) => ({
-    id: String(axle.id),
-    x_mm: Number(axle.x_mm),
-    y_mm: Number(axle.y_mm),
-    track_mm: Number(axle.track_mm),
-    wheel_count: Number(axle.wheel_count || 2),
-    steerable: axle.steerable !== false,
-    steering_mode: axle.steering_mode || "FORCED_STEER",
-    heading_rad: Number(axle.heading_rad ?? (Number(axle.heading_deg || 0) * Math.PI / 180)),
-    maximum_steering_angle_deg: axle.maximum_steering_angle_deg == null ? null : Number(axle.maximum_steering_angle_deg),
-    steering_stop_deg: axle.steering_stop_deg == null ? null : Number(axle.steering_stop_deg),
-    load_kg: axle.load_kg == null ? null : Number(axle.load_kg),
-    tire_width_mm: Number(axle.tire_width_mm || 0),
-    outside_diameter_mm: Number(axle.outside_diameter_mm || 0),
-    user_defined_steering_angle_deg: Number(axle.user_defined_steering_angle_deg || 0),
-  }));
+  const serializedAxles = state.customAxles.map((axle) => {
+    const wheelCount = Number(axle.wheel_count || 2);
+    return {
+      id: String(axle.id),
+      x_mm: Number(axle.x_mm),
+      y_mm: Number(axle.y_mm),
+      track_mm: Number(axle.track_mm),
+      wheel_count: wheelCount,
+      wheel_lateral_offsets_mm: parseWheelLateralOffsets(axle.wheel_lateral_offsets_mm, wheelCount),
+      steerable: axle.steerable !== false,
+      steering_mode: axle.steering_mode || "FORCED_STEER",
+      heading_rad: Number(axle.heading_rad ?? (Number(axle.heading_deg || 0) * Math.PI / 180)),
+      maximum_steering_angle_deg: axle.maximum_steering_angle_deg == null ? null : Number(axle.maximum_steering_angle_deg),
+      steering_stop_deg: axle.steering_stop_deg == null ? null : Number(axle.steering_stop_deg),
+      load_kg: axle.load_kg == null ? null : Number(axle.load_kg),
+      tire_width_mm: Number(axle.tire_width_mm || 0),
+      outside_diameter_mm: Number(axle.outside_diameter_mm || 0),
+      user_defined_steering_angle_deg: Number(axle.user_defined_steering_angle_deg || 0),
+    };
+  });
   return {
     id: "custom_vehicle_layout",
     name: "Custom axle layout",
@@ -1565,6 +3053,7 @@ function serializedVehicleConfig() {
     rear_articulation_point: state.geometry.rearArticulationPoint || null,
     kingpin_point: state.geometry.kingpinPoint || null,
     maximum_articulation_deg: Number(state.geometry.maximumArticulationDeg ?? 45),
+    cad_source: state.vehicleConfig?.cad_source || null,
     axles: serializedAxles,
     steering_synchronizations: state.customAxles.map((axle) => ({
       id: `sync_${String(axle.id)}`,
@@ -1596,6 +3085,7 @@ function storedVehicleConfig(raw) {
     y_mm: Number(axle.y_mm ?? axle.center?.y_mm ?? 0),
     track_mm: Number(axle.track_mm),
     wheel_count: Number(axle.wheel_count || 2),
+    wheel_lateral_offsets_mm: wheelOffsetText(axle.wheel_lateral_offsets_mm),
     steerable: axle.steerable !== false,
     steering_mode: axle.steering_mode || (axle.steerable === false ? "FIXED" : "FORCED_STEER"),
     heading_rad: Number(axle.heading_rad || 0),
@@ -1617,6 +3107,9 @@ function storedVehicleConfig(raw) {
   const normalized = serializedVehicleConfig();
   normalized.id = raw.id || normalized.id;
   normalized.name = raw.name || normalized.name;
+  normalized.cad_source = raw.cad_source && typeof raw.cad_source === "object"
+    ? { ...raw.cad_source }
+    : null;
   if (Number.isFinite(Number(raw.body_length_mm)) && Number(raw.body_length_mm) > 0) {
     normalized.body_length_mm = Number(raw.body_length_mm);
     state.geometry.bodyLengthMm = normalized.body_length_mm;
@@ -1657,6 +3150,1417 @@ function vehicleConfigQuery() {
     : "";
 }
 
+function makeCombinationField(labelText, value, onInput, options = {}) {
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = options.type || "number";
+  input.value = String(value);
+  if (options.step !== undefined) input.step = String(options.step);
+  if (options.min !== undefined) input.min = String(options.min);
+  input.addEventListener("input", () => {
+    const nextValue = input.type === "number" ? Number(input.value) : input.value;
+    onInput(nextValue);
+    markWorkspaceDirty("Combination geometry changed. Rebuild the mechanism and save a new revision before review.", {
+      invalidateMechanism: true,
+    });
+  });
+  label.appendChild(input);
+  return label;
+}
+
+function bodyPolygonText(points) {
+  return (Array.isArray(points) ? points : [])
+    .map((point) => `${Number(point.x_mm).toFixed(1)}, ${Number(point.y_mm).toFixed(1)}`)
+    .join("\n");
+}
+
+function parseBodyPolygonText(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return [];
+  }
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error("CAD outlines need at least three perimeter points.");
+  }
+  return lines.map((line, index) => {
+    const values = line.split(/[,;\s]+/).filter(Boolean);
+    if (values.length !== 2) {
+      throw new Error(`CAD outline point ${index + 1} must be written as x, y.`);
+    }
+    const xMm = Number(values[0]);
+    const yMm = Number(values[1]);
+    if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) {
+      throw new Error(`CAD outline point ${index + 1} must contain finite millimetres.`);
+    }
+    return { x_mm: xMm, y_mm: yMm };
+  });
+}
+
+function makeBodyPolygonEditor(body) {
+  const editor = document.createElement("details");
+  editor.className = "body-outline-editor";
+  const summary = document.createElement("summary");
+  summary.textContent = body.bodyPolygon.length >= 3 ? "CAD outline supplied" : "Optional CAD outline";
+  const note = document.createElement("p");
+  note.className = "curve-note";
+  note.textContent = "Leave blank to use the length/width rectangle. Otherwise enter one local x, y point per line in perimeter order; the first and last points are joined automatically.";
+  const label = document.createElement("label");
+  label.textContent = "Local outline points (mm)";
+  const textarea = document.createElement("textarea");
+  textarea.rows = 5;
+  textarea.spellcheck = false;
+  textarea.placeholder = "-3000, -1600\n3000, -1600\n3000, 1600\n-3000, 1600";
+  textarea.value = body.bodyPolygonText ?? bodyPolygonText(body.bodyPolygon);
+  const status = document.createElement("small");
+  status.className = "body-outline-status";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "secondary-button";
+  clear.textContent = "Use rectangular envelope";
+
+  const update = () => {
+    body.bodyPolygonText = textarea.value;
+    try {
+      body.bodyPolygon = parseBodyPolygonText(textarea.value);
+      body.bodyPolygonError = null;
+      textarea.setCustomValidity("");
+      summary.textContent = body.bodyPolygon.length >= 3 ? "CAD outline supplied" : "Optional CAD outline";
+      status.textContent = body.bodyPolygon.length >= 3
+        ? `${body.bodyPolygon.length} perimeter points will replace the rectangular envelope.`
+        : "No CAD outline supplied. Length and width define the rectangular envelope.";
+    } catch (error) {
+      body.bodyPolygon = [];
+      body.bodyPolygonError = error.message;
+      textarea.setCustomValidity(error.message);
+      summary.textContent = "CAD outline needs attention";
+      status.textContent = error.message;
+    }
+    markWorkspaceDirty("Body outline changed. Rebuild the mechanism and save a new revision before review.", {
+      invalidateMechanism: true,
+    });
+  };
+  textarea.addEventListener("input", update);
+  clear.addEventListener("click", () => {
+    textarea.value = "";
+    update();
+  });
+  label.appendChild(textarea);
+  editor.append(summary, note, label, status, clear);
+  if (body.bodyPolygonError) {
+    textarea.setCustomValidity(body.bodyPolygonError);
+    status.textContent = body.bodyPolygonError;
+  } else {
+    status.textContent = body.bodyPolygon.length >= 3
+      ? `${body.bodyPolygon.length} perimeter points will replace the rectangular envelope.`
+      : "No CAD outline supplied. Length and width define the rectangular envelope.";
+  }
+  return editor;
+}
+
+function newCombinationBody(index) {
+  return {
+    id: `body_${index + 1}`,
+    name: `Body ${index + 1}`,
+    lengthMm: 3000,
+    widthMm: 3000,
+    bodyPolygon: [],
+    bodyPolygonText: "",
+    bodyPolygonError: null,
+    parentJointId: index === 0 ? null : `joint_${index + 1}`,
+    articulationDeg: 0,
+    articulationMinDeg: -45,
+    articulationMaxDeg: 45,
+    articulationStepDeg: 5,
+    articulationLimitDeg: 45,
+    parentAnchorXmm: 1500,
+    parentAnchorYmm: 0,
+    childAnchorXmm: -1500,
+    childAnchorYmm: 0,
+    axles: [
+      {
+        id: `body_${index + 1}_axle_1`,
+        xMm: 0,
+        yMm: 0,
+        trackMm: 2500,
+        mode: "FORCED_STEER",
+        wheelCount: 2,
+        wheelLateralOffsetsText: "",
+        maximumSteeringAngleDeg: 45,
+        steeringStopDeg: null,
+        tireWidthMm: 400,
+        outsideDiameterMm: 1000,
+      },
+    ],
+  };
+}
+
+function resizeCombinationBodies(count) {
+  const normalized = Math.max(1, Math.min(6, Math.trunc(count)));
+  while (state.combinationBodies.length < normalized) {
+    state.combinationBodies.push(newCombinationBody(state.combinationBodies.length));
+  }
+  state.combinationBodies.length = normalized;
+  combinationBodyCountInput.value = String(normalized);
+  renderCombinationConfig();
+}
+
+function resizeCombinationAxles(bodyIndex, count) {
+  const body = state.combinationBodies[bodyIndex];
+  const normalized = Math.max(1, Math.min(8, Math.trunc(count)));
+  while (body.axles.length < normalized) {
+    body.axles.push({
+      id: `${body.id}_axle_${body.axles.length + 1}`,
+      xMm: body.axles.length * -1000,
+      yMm: 0,
+      trackMm: 2500,
+      mode: "FORCED_STEER",
+      wheelCount: 2,
+      wheelLateralOffsetsText: "",
+      maximumSteeringAngleDeg: 45,
+      steeringStopDeg: null,
+      tireWidthMm: 400,
+      outsideDiameterMm: 1000,
+    });
+  }
+  body.axles.length = normalized;
+  renderCombinationConfig();
+}
+
+function renderCombinationConfig() {
+  const active = state.combinationActive;
+  if (combinationFields) {
+    combinationFields.hidden = !active;
+  }
+  if (combinationModeState) {
+    combinationModeState.dataset.status = active ? "active" : "legacy";
+    combinationModeState.textContent = active ? "ACTIVE" : "LEGACY REVISION";
+  }
+  if (combinationModeNote) {
+    combinationModeNote.textContent = active
+      ? "Define every rigid body, articulation joint, and mounted axle. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Continue to Maneuver when the physical combination is complete."
+      : "This revision uses the legacy single-layout study. Its two-body template is hidden so it cannot be mistaken for saved engineering input. Activate the multi-body workflow to create a new articulated model from the template.";
+  }
+  if (combinationActivateButton) {
+    combinationActivateButton.hidden = active;
+  }
+  combinationConfig.replaceChildren();
+  state.combinationBodies.forEach((body, bodyIndex) => {
+    const card = document.createElement("details");
+    card.className = "combination-body-row";
+    card.open = bodyIndex === 0;
+    const header = document.createElement("summary");
+    header.className = "combination-body-header";
+    const title = document.createElement("strong");
+    title.textContent = bodyIndex === 0 ? `${body.name} / root` : `${body.name} / child ${bodyIndex}`;
+    const summary = document.createElement("small");
+    summary.textContent = `${body.axles.length} axle${body.axles.length === 1 ? "" : "s"} / ${body.bodyPolygon.length >= 3 ? "CAD outline" : "rectangular envelope"}${bodyIndex === 0 ? "" : ` / current ${Number(body.articulationDeg).toFixed(1)} deg / sweep ${Number(body.articulationMinDeg).toFixed(0)}..${Number(body.articulationMaxDeg).toFixed(0)} deg / stop +/-${Number(body.articulationLimitDeg).toFixed(0)} deg`}`;
+    header.append(title, summary);
+
+    const fields = document.createElement("div");
+    fields.className = "combination-field-grid";
+    fields.append(
+      makeCombinationField("Axles", body.axles.length, (value) => resizeCombinationAxles(bodyIndex, value), { min: 1, step: 1 }),
+      makeCombinationField("Body name", body.name, (value) => { body.name = String(value); }, { type: "text" }),
+      makeCombinationField("Length mm", body.lengthMm, (value) => { body.lengthMm = value; }, { min: 1, step: 10 }),
+      makeCombinationField("Width mm", body.widthMm, (value) => { body.widthMm = value; }, { min: 1, step: 10 }),
+    );
+    if (bodyIndex > 0) {
+      fields.append(
+        makeCombinationField("Articulation deg", body.articulationDeg, (value) => { body.articulationDeg = value; }, { step: 0.5 }),
+        makeCombinationField("Physical limit +/- deg", body.articulationLimitDeg, (value) => { body.articulationLimitDeg = value; }, { min: 0, step: 0.5 }),
+        makeCombinationField("Sweep min deg", body.articulationMinDeg, (value) => {
+          body.articulationMinDeg = value;
+          if (bodyIndex === 1 && Number.isFinite(Number(body.articulationMaxDeg))) {
+            setBetaRange(Number(value), Number(body.articulationMaxDeg));
+          }
+        }, { step: 0.5 }),
+        makeCombinationField("Sweep max deg", body.articulationMaxDeg, (value) => {
+          body.articulationMaxDeg = value;
+          if (bodyIndex === 1 && Number.isFinite(Number(body.articulationMinDeg))) {
+            setBetaRange(Number(body.articulationMinDeg), Number(value));
+          }
+        }, { step: 0.5 }),
+        makeCombinationField("Sweep step deg", body.articulationStepDeg, (value) => { body.articulationStepDeg = value; }, { min: 0.1, step: 0.5 }),
+        makeCombinationField("Parent anchor X", body.parentAnchorXmm, (value) => { body.parentAnchorXmm = value; }, { step: 10 }),
+        makeCombinationField("Parent anchor Y", body.parentAnchorYmm, (value) => { body.parentAnchorYmm = value; }, { step: 10 }),
+        makeCombinationField("Child anchor X", body.childAnchorXmm, (value) => { body.childAnchorXmm = value; }, { step: 10 }),
+        makeCombinationField("Child anchor Y", body.childAnchorYmm, (value) => { body.childAnchorYmm = value; }, { step: 10 }),
+      );
+    }
+    card.append(header, fields);
+    card.appendChild(makeBodyPolygonEditor(body));
+
+    body.axles.forEach((axle, axleIndex) => {
+      const heading = document.createElement("p");
+      heading.className = "combination-axle-heading";
+      heading.textContent = `Axle ${axleIndex + 1}`;
+      const axleFields = document.createElement("div");
+      axleFields.className = "combination-field-grid";
+      const modeLabel = document.createElement("label");
+      modeLabel.textContent = "Steering mode";
+      const modeSelect = document.createElement("select");
+      for (const mode of ["FORCED_STEER", "FIXED", "USER_DEFINED"]) {
+        const option = document.createElement("option");
+        option.value = mode;
+        option.textContent = mode.replaceAll("_", " ");
+        modeSelect.appendChild(option);
+      }
+      modeSelect.value = axle.mode;
+      modeSelect.addEventListener("change", () => {
+        axle.mode = modeSelect.value;
+        markWorkspaceDirty("Combination axle steering mode changed. Rebuild the mechanism and save a new revision before review.", {
+          invalidateMechanism: true,
+        });
+      });
+      modeLabel.appendChild(modeSelect);
+      axleFields.append(
+        makeCombinationField("Local X mm", axle.xMm, (value) => { axle.xMm = value; }, { step: 10 }),
+        makeCombinationField("Local Y mm", axle.yMm, (value) => { axle.yMm = value; }, { step: 10 }),
+        makeCombinationField("Track mm", axle.trackMm, (value) => { axle.trackMm = value; }, { min: 1, step: 10 }),
+        makeCombinationField("Wheel count", axle.wheelCount || 2, (value) => { axle.wheelCount = Math.max(2, Math.trunc(value)); }, { min: 2, step: 2 }),
+        makeCombinationField("Wheel offsets mm (+left)", axle.wheelLateralOffsetsText || "", (value) => { axle.wheelLateralOffsetsText = String(value); }, { type: "text" }),
+        makeCombinationField("Tire width mm", axle.tireWidthMm || 0, (value) => { axle.tireWidthMm = Math.max(0, value); }, { min: 0, step: 1 }),
+        makeCombinationField("Tire OD mm", axle.outsideDiameterMm || 0, (value) => { axle.outsideDiameterMm = Math.max(0, value); }, { min: 0, step: 1 }),
+        modeLabel,
+      );
+      card.append(heading, axleFields);
+    });
+    combinationConfig.appendChild(card);
+  });
+  renderCombinationSynchronizationConfig();
+}
+
+function combinationAxleOptions() {
+  return state.combinationBodies.flatMap((body) => body.axles.map((axle) => ({
+    id: axle.id,
+    label: `${body.name} / ${axle.id}`,
+  })));
+}
+
+function renderCombinationSynchronizationConfig() {
+  const section = document.createElement("div");
+  section.className = "combination-synchronization-section";
+  const heading = document.createElement("h4");
+  heading.textContent = "Steering coordination";
+  const note = document.createElement("p");
+  note.className = "curve-note";
+  note.textContent = "Define how a target axle follows a source axle. This channel is checked against the ideal steering result.";
+  section.append(heading, note);
+
+  const options = combinationAxleOptions();
+  state.combinationSynchronizations = state.combinationSynchronizations.filter((sync) =>
+    options.some((option) => option.id === sync.targetAxleId)
+    && options.some((option) => option.id === sync.sourceAxleId),
+  );
+  state.combinationSynchronizations.forEach((sync, syncIndex) => {
+    const card = document.createElement("div");
+    card.className = "combination-synchronization-row";
+    const title = document.createElement("strong");
+    title.textContent = sync.id || `sync_${syncIndex + 1}`;
+    const fields = document.createElement("div");
+    fields.className = "combination-field-grid";
+    fields.appendChild(makeCombinationField("Channel ID", sync.id, (value) => {
+      sync.id = String(value).trim() || `sync_${syncIndex + 1}`;
+    }, { type: "text" }));
+
+    const selectField = (labelText, property, allowedOptions) => {
+      const label = document.createElement("label");
+      label.textContent = labelText;
+      const select = document.createElement("select");
+      allowedOptions.forEach((option) => {
+        const element = document.createElement("option");
+        element.value = option.value;
+        element.textContent = option.label;
+        select.appendChild(element);
+      });
+      select.value = sync[property];
+      select.addEventListener("change", () => {
+        sync[property] = select.value;
+        markWorkspaceDirty("Steering coordination changed. Rebuild the mechanism and save a new revision before review.", {
+          invalidateMechanism: true,
+        });
+      });
+      label.appendChild(select);
+      return label;
+    };
+    fields.append(
+      selectField("Target axle", "targetAxleId", options.map((option) => ({ value: option.id, label: option.label }))),
+      selectField("Source axle", "sourceAxleId", options.map((option) => ({ value: option.id, label: option.label }))),
+      selectField("Mode", "mode", [
+        { value: "OPPOSITE_PHASE", label: "Opposite phase" },
+        { value: "SAME_PHASE", label: "Same phase" },
+        { value: "RATIO", label: "Ratio" },
+        { value: "LINKED_MECHANICALLY", label: "Linked mechanically" },
+      ]),
+      makeCombinationField("Ratio", sync.ratio, (value) => { sync.ratio = value; }, { step: 0.05 }),
+      makeCombinationField("Phase offset deg", sync.phaseOffsetDeg, (value) => { sync.phaseOffsetDeg = value; }, { step: 0.5 }),
+    );
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Remove channel";
+    remove.addEventListener("click", () => {
+      state.combinationSynchronizations.splice(syncIndex, 1);
+      markWorkspaceDirty("Steering coordination changed. Rebuild the mechanism and save a new revision before review.", {
+        invalidateMechanism: true,
+      });
+      renderCombinationConfig();
+    });
+    card.append(title, fields, remove);
+    section.appendChild(card);
+  });
+
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "secondary-button";
+  add.textContent = "Add synchronization channel";
+  add.disabled = options.length < 2;
+  add.addEventListener("click", () => {
+    const source = options[options.length - 1];
+    const target = options.find((option) => option.id !== source.id) || source;
+    state.combinationSynchronizations.push({
+      id: `sync_${state.combinationSynchronizations.length + 1}`,
+      targetAxleId: target.id,
+      sourceAxleId: source.id,
+      mode: "OPPOSITE_PHASE",
+      ratio: 1,
+      phaseOffsetDeg: 0,
+    });
+    markWorkspaceDirty("Steering coordination changed. Rebuild the mechanism and save a new revision before review.", {
+      invalidateMechanism: true,
+    });
+    renderCombinationConfig();
+  });
+  section.appendChild(add);
+  combinationConfig.appendChild(section);
+}
+
+function serializedCombination() {
+  const invalidOutline = state.combinationBodies.find((body) => body.bodyPolygonError);
+  if (invalidOutline) {
+    throw new Error(`${invalidOutline.name} has an invalid CAD outline: ${invalidOutline.bodyPolygonError}`);
+  }
+  const bodies = state.combinationBodies.map((body, index) => ({
+    id: body.id,
+    name: body.name,
+    pose: index === 0 ? { x_mm: 0, y_mm: 0, yaw_deg: 0 } : undefined,
+    body_length_mm: Number(body.lengthMm),
+    body_width_mm: Number(body.widthMm),
+    body_polygon: Array.isArray(body.bodyPolygon) ? body.bodyPolygon : [],
+    parent_joint_id: index === 0 ? null : (body.parentJointId || `joint_${index + 1}`),
+    child_joint_ids: index === state.combinationBodies.length - 1
+      ? []
+      : [state.combinationBodies[index + 1].parentJointId || `joint_${index + 2}`],
+  }));
+  const joints = state.combinationBodies.slice(1).map((body, index) => ({
+    id: body.parentJointId || `joint_${index + 2}`,
+    parent_body_id: state.combinationBodies[index].id,
+    child_body_id: body.id,
+    parent_anchor: { x_mm: Number(body.parentAnchorXmm), y_mm: Number(body.parentAnchorYmm) },
+    child_anchor: { x_mm: Number(body.childAnchorXmm), y_mm: Number(body.childAnchorYmm) },
+    articulation_deg: Number(body.articulationDeg),
+    maximum_articulation_deg: Number(body.articulationLimitDeg),
+  }));
+  const jointRanges = Object.fromEntries(
+    state.combinationBodies.slice(1).map((body, index) => {
+      const jointId = body.parentJointId || `joint_${index + 2}`;
+      return [jointId, {
+        min_deg: Number(body.articulationMinDeg),
+        max_deg: Number(body.articulationMaxDeg),
+        step_deg: Number(body.articulationStepDeg),
+      }];
+    }),
+  );
+  const mountedAxles = state.combinationBodies.flatMap((body) => body.axles.map((axle) => ({
+    body_id: body.id,
+    local_center: { x_mm: Number(axle.xMm), y_mm: Number(axle.yMm) },
+      axle: {
+      id: axle.id,
+      track_mm: Number(axle.trackMm),
+      steering_mode: axle.mode,
+      steerable: axle.mode !== "FIXED",
+      wheel_count: Number(axle.wheelCount || 2),
+      wheel_lateral_offsets_mm: parseWheelLateralOffsets(
+        axle.wheelLateralOffsetsText,
+        Number(axle.wheelCount || 2),
+      ),
+      maximum_steering_angle_deg: axle.maximumSteeringAngleDeg == null ? null : Number(axle.maximumSteeringAngleDeg),
+      steering_stop_deg: axle.steeringStopDeg == null ? null : Number(axle.steeringStopDeg),
+      outside_diameter_mm: Number(axle.outsideDiameterMm || 0),
+      tire_width_mm: Number(axle.tireWidthMm || 0),
+    },
+  })));
+  const axleIds = new Set(mountedAxles.map((mounted) => mounted.axle.id));
+  return {
+    id: state.combinationId,
+    name: state.combinationName,
+    root_body_id: state.combinationBodies[0].id,
+    bodies,
+    joints,
+    joint_ranges: jointRanges,
+    mounted_axles: mountedAxles,
+    steering_synchronizations: state.combinationSynchronizations
+      .filter((sync) => axleIds.has(sync.targetAxleId) && axleIds.has(sync.sourceAxleId))
+      .map((sync, index) => ({
+        id: String(sync.id || `sync_${index + 1}`),
+        target_axle_id: sync.targetAxleId,
+        source_axle_id: sync.sourceAxleId,
+        mode: sync.mode,
+        ratio: Number(sync.ratio),
+        phase_offset_deg: Number(sync.phaseOffsetDeg),
+      })),
+  };
+}
+
+function storedJointRange(config, jointId) {
+  const rawRanges = config?.joint_ranges;
+  if (Array.isArray(rawRanges)) {
+    return rawRanges.find((item) => String(item?.joint_id || item?.id || "") === String(jointId)) || null;
+  }
+  return rawRanges && typeof rawRanges === "object" ? rawRanges[jointId] || null : null;
+}
+
+function restoreCombinationConfiguration(config) {
+  const rawBodies = Array.isArray(config?.bodies) ? config.bodies : [];
+  const rawJoints = Array.isArray(config?.joints) ? config.joints : [];
+  const rawMountedAxles = Array.isArray(config?.mounted_axles) ? config.mounted_axles : [];
+  if (rawBodies.length === 0 || !config?.root_body_id) {
+    throw new Error("Stored combination has no root body.");
+  }
+
+  const bodyById = new Map(rawBodies.map((body) => [body.id, body]));
+  const childJointByParent = new Map(rawJoints.map((joint) => [joint.parent_body_id, joint]));
+  const parentJointByChild = new Map(rawJoints.map((joint) => [joint.child_body_id, joint]));
+  const orderedBodies = [];
+  const visited = new Set();
+  let bodyId = config.root_body_id;
+  while (bodyId && !visited.has(bodyId)) {
+    const body = bodyById.get(bodyId);
+    if (!body) {
+      throw new Error(`Stored combination references missing body ${bodyId}.`);
+    }
+    visited.add(bodyId);
+    orderedBodies.push(body);
+    bodyId = childJointByParent.get(bodyId)?.child_body_id || null;
+  }
+  if (orderedBodies.length !== rawBodies.length) {
+    throw new Error("Stored combination must be one connected body chain.");
+  }
+
+  state.combinationId = String(config.id || "workspace_combination");
+  state.combinationName = String(config.name || "Workspace vehicle combination");
+  const rawSynchronizations = Array.isArray(config.steering_synchronizations)
+    ? config.steering_synchronizations
+    : [];
+  state.combinationSynchronizations = rawSynchronizations.map((sync, index) => ({
+    id: String(sync.id || `sync_${index + 1}`),
+    targetAxleId: String(sync.target_axle_id || sync.axle_id || ""),
+    sourceAxleId: String(sync.source_axle_id || ""),
+    mode: String(sync.mode || "SAME_PHASE"),
+    ratio: Number(sync.ratio ?? 1),
+    phaseOffsetDeg: Number(sync.phase_offset_deg ?? ((Number(sync.phase_offset_rad) || 0) * 180 / Math.PI)),
+  }));
+  state.combinationBodies = orderedBodies.map((body, index) => {
+    const parentJoint = parentJointByChild.get(body.id);
+    const jointRange = parentJoint ? storedJointRange(config, parentJoint.id) : null;
+    const axles = rawMountedAxles
+      .filter((mounted) => mounted.body_id === body.id)
+      .map((mounted, axleIndex) => {
+        const axle = mounted.axle || mounted;
+        const center = mounted.local_center || {};
+        return {
+          id: String(axle.id || axle.axle_id || `${body.id}_axle_${axleIndex + 1}`),
+          xMm: Number(center.x_mm || 0),
+          yMm: Number(center.y_mm || 0),
+          trackMm: Number(axle.track_mm || 2500),
+          mode: String(axle.steering_mode || (axle.steerable === false ? "FIXED" : "FORCED_STEER")),
+          wheelCount: Number(axle.wheel_count || 2),
+          wheelLateralOffsetsText: wheelOffsetText(axle.wheel_lateral_offsets_mm),
+          maximumSteeringAngleDeg: axle.maximum_steering_angle_deg == null ? null : Number(axle.maximum_steering_angle_deg),
+          steeringStopDeg: axle.steering_stop_deg == null ? null : Number(axle.steering_stop_deg),
+          tireWidthMm: Number(axle.tire_width_mm ?? 0),
+          outsideDiameterMm: Number(axle.outside_diameter_mm ?? 0),
+        };
+      });
+    return {
+      id: String(body.id),
+      name: String(body.name || `Body ${index + 1}`),
+      lengthMm: Number(body.body_length_mm || 1800),
+      widthMm: Number(body.body_width_mm || 3200),
+      bodyPolygon: Array.isArray(body.body_polygon) ? body.body_polygon : [],
+      bodyPolygonText: bodyPolygonText(body.body_polygon),
+      bodyPolygonError: null,
+      parentJointId: index === 0 ? null : String(parentJoint?.id || `joint_${index + 1}`),
+      articulationDeg: Number(parentJoint?.articulation_deg || 0),
+      articulationLimitDeg: Number(parentJoint?.maximum_articulation_deg ?? 45),
+      parentAnchorXmm: Number(parentJoint?.parent_anchor?.x_mm || 0),
+      parentAnchorYmm: Number(parentJoint?.parent_anchor?.y_mm || 0),
+      childAnchorXmm: Number(parentJoint?.child_anchor?.x_mm || 0),
+      childAnchorYmm: Number(parentJoint?.child_anchor?.y_mm || 0),
+      articulationMinDeg: Number(jointRange?.min_deg ?? -45),
+      articulationMaxDeg: Number(jointRange?.max_deg ?? 45),
+      articulationStepDeg: Number(jointRange?.step_deg ?? 5),
+      axles: axles.length > 0
+        ? axles
+        : [{ id: `${body.id}_axle_1`, xMm: 0, yMm: 0, trackMm: 2500, mode: "FIXED", wheelCount: 2, maximumSteeringAngleDeg: null, steeringStopDeg: null, tireWidthMm: 0, outsideDiameterMm: 0 }],
+    };
+  });
+  if (state.combinationSynchronizations.length === 0
+      && state.combinationBodies.some((body) => body.id === "rear_body")
+      && state.combinationBodies.some((body) => body.id === "front_body")) {
+    const rearAxle = state.combinationBodies.find((body) => body.id === "rear_body")?.axles[0];
+    const frontAxle = state.combinationBodies.find((body) => body.id === "front_body")?.axles[0];
+    if (rearAxle && frontAxle) {
+      state.combinationSynchronizations = [{
+        id: "rear_to_front_sync",
+        targetAxleId: rearAxle.id,
+        sourceAxleId: frontAxle.id,
+        mode: "OPPOSITE_PHASE",
+        ratio: 1,
+        phaseOffsetDeg: 0,
+      }];
+    }
+  }
+  const primaryJointRange = state.combinationBodies[1];
+  if (primaryJointRange
+      && Number.isFinite(Number(primaryJointRange.articulationMinDeg))
+      && Number.isFinite(Number(primaryJointRange.articulationMaxDeg))
+      && Number(primaryJointRange.articulationMinDeg) < Number(primaryJointRange.articulationMaxDeg)) {
+    setBetaRange(
+      Number(primaryJointRange.articulationMinDeg),
+      Number(primaryJointRange.articulationMaxDeg),
+    );
+  }
+  combinationBodyCountInput.value = String(state.combinationBodies.length);
+  renderCombinationConfig();
+}
+
+function projectCombinationPayload() {
+  if (!state.combinationActive) {
+    return {};
+  }
+  return {
+    combination_config: serializedCombination(),
+    root_turn_radius_mm: Number(combinationTurnRadiusInput.value),
+    mechanism_graph_config: state.mechanismGraph,
+    mechanism_drivers: state.mechanismDrivers,
+    steering_assignments: state.steeringAssignments,
+    beta_min_deg: state.betaRange.minDeg,
+    beta_max_deg: state.betaRange.maxDeg,
+    primary_joint_id: state.combinationBodies.length > 1
+      ? (state.combinationBodies[1].parentJointId || "joint_2")
+      : undefined,
+    sweep_step_deg: Number(sweepValidationStepInput.value),
+    clearance_target_mm: Number(state.optimizationSettings.clearanceTargetMm),
+  };
+}
+
+function graphPoint(id, xMm, yMm, mode, bodyId, envelopeRadiusMm = 0) {
+  return {
+    id,
+    mode,
+    body_id: bodyId,
+    neutral_position: { x_mm: xMm, y_mm: yMm },
+    envelope_radius_mm: envelopeRadiusMm,
+  };
+}
+
+function buildMechanismGraphFromCombination() {
+  const config = state.linkageConfig || REFERENCE_LINKAGE_CONFIG;
+  if (
+    config.companion_enabled === false
+    || config.companion_steering_arm_length_mm === null
+    || config.companion_tie_rod_length_mm === null
+  ) {
+    throw new Error("The graph builder requires explicit left and right steering-arm geometry.");
+  }
+  const points = [];
+  const members = [];
+  const angleOutputs = [];
+  const drivers = [];
+  const assignments = [];
+  const primaryJointId = state.combinationBodies[1]?.parentJointId || "joint_2";
+  const pointAt = (pivotX, pivotY, angleDeg, lengthMm) => ({
+    x: pivotX + Math.cos(angleDeg * Math.PI / 180) * lengthMm,
+    y: pivotY + Math.sin(angleDeg * Math.PI / 180) * lengthMm,
+  });
+
+  state.combinationBodies.forEach((body, bodyIndex) => {
+    body.axles.forEach((axle, axleIndex) => {
+      if (axle.mode === "FIXED") {
+        return;
+      }
+      const prefix = `${body.id}_${axle.id}_mechanism`;
+      const shiftedX = (value) => Number(axle.xMm) + Number(value);
+      const shiftedY = (value) => Number(axle.yMm) + Number(value);
+      const bellX = shiftedX(config.bell_crank_pivot_x_mm);
+      const bellY = shiftedY(config.bell_crank_pivot_y_mm);
+      const steeringX = shiftedX(config.steering_pivot_x_mm);
+      const steeringY = shiftedY(config.steering_pivot_y_mm);
+      const companionX = shiftedX(config.companion_steering_pivot_x_mm);
+      const companionY = shiftedY(config.companion_steering_pivot_y_mm);
+      const inputEndpoint = pointAt(
+        bellX,
+        bellY,
+        Number(config.bell_crank_input_neutral_angle_deg),
+        Number(config.bell_crank_input_arm_length_mm),
+      );
+      const outputEndpoint = pointAt(
+        bellX,
+        bellY,
+        Number(config.bell_crank_output_neutral_angle_deg),
+        Number(config.bell_crank_output_arm_length_mm),
+      );
+      const steeringEndpoint = pointAt(
+        steeringX,
+        steeringY,
+        Number(config.steering_arm_neutral_angle_deg),
+        Number(config.steering_arm_length_mm),
+      );
+      const companionEndpoint = pointAt(
+        companionX,
+        companionY,
+        Number(config.companion_steering_arm_neutral_angle_deg),
+        Number(config.companion_steering_arm_length_mm),
+      );
+      const driverCenter = {
+        x: shiftedX(config.driver_arc_center_x_mm),
+        y: shiftedY(config.driver_arc_center_y_mm),
+      };
+      const driverNeutral = {
+        x: driverCenter.x + Number(config.driver_arc_radius_mm),
+        y: driverCenter.y,
+      };
+      const ids = {
+        driver: `${prefix}_driver`,
+        bellPivot: `${prefix}_bell_pivot`,
+        bellInput: `${prefix}_bell_input`,
+        bellOutput: `${prefix}_bell_output`,
+        steeringPivot: `${prefix}_left_pivot`,
+        steeringEndpoint: `${prefix}_left_endpoint`,
+        companionPivot: `${prefix}_right_pivot`,
+        companionEndpoint: `${prefix}_right_endpoint`,
+        leftOutput: `${prefix}_left_output`,
+        rightOutput: `${prefix}_right_output`,
+      };
+      points.push(
+        graphPoint(ids.driver, driverNeutral.x, driverNeutral.y, "driven", body.id),
+        graphPoint(ids.bellPivot, bellX, bellY, "fixed", body.id, 28),
+        graphPoint(ids.bellInput, inputEndpoint.x, inputEndpoint.y, "free", body.id),
+        graphPoint(ids.bellOutput, outputEndpoint.x, outputEndpoint.y, "free", body.id),
+        graphPoint(ids.steeringPivot, steeringX, steeringY, "fixed", body.id, 28),
+        graphPoint(ids.steeringEndpoint, steeringEndpoint.x, steeringEndpoint.y, "free", body.id),
+        graphPoint(ids.companionPivot, companionX, companionY, "fixed", body.id, 28),
+        graphPoint(ids.companionEndpoint, companionEndpoint.x, companionEndpoint.y, "free", body.id),
+      );
+      const member = (id, pointAId, pointBId, lengthMm, kind = "rod", radiusMm = 14, assemblyId = null) => ({
+        id: `${prefix}_${id}`,
+        point_a_id: pointAId,
+        point_b_id: pointBId,
+        length_mm: Number(lengthMm),
+        kind,
+        envelope_radius_mm: radiusMm,
+        assembly_id: assemblyId,
+      });
+      members.push(
+        member("input_rod", ids.driver, ids.bellInput, config.input_rod_length_mm),
+        member("bell_input_arm", ids.bellPivot, ids.bellInput, config.bell_crank_input_arm_length_mm, "arm", 14, prefix),
+        member("bell_output_arm", ids.bellPivot, ids.bellOutput, config.bell_crank_output_arm_length_mm, "arm", 14, prefix),
+        member(
+          "bell_brace",
+          ids.bellInput,
+          ids.bellOutput,
+          Math.hypot(outputEndpoint.x - inputEndpoint.x, outputEndpoint.y - inputEndpoint.y),
+          "rigid_brace",
+          0,
+          prefix,
+        ),
+        member("tie_rod", ids.bellOutput, ids.steeringEndpoint, config.tie_rod_length_mm),
+        member("left_arm", ids.steeringPivot, ids.steeringEndpoint, config.steering_arm_length_mm, "arm"),
+        member("cross_tie_rod", ids.steeringEndpoint, ids.companionEndpoint, config.companion_tie_rod_length_mm),
+        member("right_arm", ids.companionPivot, ids.companionEndpoint, config.companion_steering_arm_length_mm, "arm"),
+      );
+      const stop = config.steering_stop_deg;
+      angleOutputs.push(
+        {
+          id: ids.leftOutput,
+          pivot_point_id: ids.steeringPivot,
+          endpoint_point_id: ids.steeringEndpoint,
+          neutral_angle_deg: Number(config.steering_arm_neutral_angle_deg),
+          minimum_angle_deg: stop === null ? undefined : -Number(stop),
+          maximum_angle_deg: stop === null ? undefined : Number(stop),
+        },
+        {
+          id: ids.rightOutput,
+          pivot_point_id: ids.companionPivot,
+          endpoint_point_id: ids.companionEndpoint,
+          neutral_angle_deg: Number(config.companion_steering_arm_neutral_angle_deg),
+          minimum_angle_deg: stop === null ? undefined : -Number(stop),
+          maximum_angle_deg: stop === null ? undefined : Number(stop),
+        },
+      );
+      const inputId = bodyIndex === 0
+        ? (state.combinationBodies.length > 1 ? primaryJointId : "articulation")
+        : (body.parentJointId || `joint_${bodyIndex + 1}`);
+      drivers.push({
+        point_id: ids.driver,
+        center: { x_mm: driverCenter.x, y_mm: driverCenter.y },
+        radius_mm: Number(config.driver_arc_radius_mm),
+        neutral_angle_deg: 0,
+        input_ratio: bodyIndex === 0 ? -1 : 1,
+        input_id: inputId,
+      });
+      for (const wheelId of wheelIdsForAxle(axle)) {
+        assignments.push({
+          output_id: wheelId.includes("_left") ? ids.leftOutput : ids.rightOutput,
+          wheel_id: wheelId,
+        });
+      }
+    });
+  });
+
+  state.mechanismGraph = {
+    id: "workspace_mechanism_graph",
+    points,
+    members,
+    angle_outputs: angleOutputs,
+  };
+  state.mechanismDrivers = drivers;
+  state.steeringAssignments = assignments;
+  state.workspaceDirty = true;
+  resetEngineeringEvidence(
+    "Graph built. Solve the design before validating the range.",
+    { preserveManeuver: true },
+  );
+  renderMechanismGraphConfiguration(
+    `Graph built with ${drivers.length} articulation drivers and explicit mappings for ${assignments.length} wheels.`,
+  );
+  mechanismGraphEditor.open = true;
+}
+
+function angleDegreesFromConfig(item, name) {
+  if (item[`${name}_deg`] !== undefined && item[`${name}_deg`] !== null) {
+    return Number(item[`${name}_deg`]);
+  }
+  if (item[`${name}_rad`] !== undefined && item[`${name}_rad`] !== null) {
+    return Number(item[`${name}_rad`]) * 180 / Math.PI;
+  }
+  return "";
+}
+
+function syncMechanismGraphEditorDraft() {
+  if (!state.mechanismGraph) {
+    state.mechanismGraphEditorDraft = null;
+    return;
+  }
+  const graph = state.mechanismGraph;
+  state.mechanismGraphEditorDraft = {
+    graphId: String(graph.id || "workspace_mechanism_graph"),
+    points: (graph.points || []).map((point) => ({
+      id: String(point.id || ""),
+      mode: String(point.mode || "free"),
+      body_id: String(point.body_id || ""),
+      x_mm: Number(point.neutral_position?.x_mm ?? point.x_mm ?? 0),
+      y_mm: Number(point.neutral_position?.y_mm ?? point.y_mm ?? 0),
+      envelope_radius_mm: Number(point.envelope_radius_mm ?? 0),
+    })),
+    members: (graph.members || []).map((member) => ({
+      id: String(member.id || ""),
+      point_a_id: String(member.point_a_id || ""),
+      point_b_id: String(member.point_b_id || ""),
+      length_mm: Number(member.length_mm ?? 0),
+      kind: String(member.kind || "rod"),
+      envelope_radius_mm: Number(member.envelope_radius_mm ?? 0),
+      assembly_id: String(member.assembly_id || ""),
+    })),
+    outputs: (graph.angle_outputs || []).map((output) => ({
+      id: String(output.id || ""),
+      pivot_point_id: String(output.pivot_point_id || ""),
+      endpoint_point_id: String(output.endpoint_point_id || ""),
+      neutral_angle_deg: angleDegreesFromConfig(output, "neutral_angle"),
+      minimum_angle_deg: angleDegreesFromConfig(output, "minimum_angle"),
+      maximum_angle_deg: angleDegreesFromConfig(output, "maximum_angle"),
+      reference_body_id: String(output.reference_body_id || ""),
+    })),
+    drivers: (state.mechanismDrivers || []).map((driver) => ({
+      point_id: String(driver.point_id || ""),
+      input_id: String(driver.input_id || "articulation"),
+      center_x_mm: Number(driver.center?.x_mm ?? 0),
+      center_y_mm: Number(driver.center?.y_mm ?? 0),
+      radius_mm: Number(driver.radius_mm ?? 0),
+      neutral_angle_deg: angleDegreesFromConfig(driver, "neutral_angle"),
+      input_ratio: Number(driver.input_ratio ?? 1),
+      phase_offset_deg: angleDegreesFromConfig(driver, "phase_offset") === ""
+        ? 0
+        : angleDegreesFromConfig(driver, "phase_offset"),
+    })),
+    assignments: (state.steeringAssignments || []).map((assignment) => ({
+      output_id: String(assignment.output_id || ""),
+      wheel_id: String(assignment.wheel_id || ""),
+      ratio: Number(assignment.ratio ?? 1),
+      phase_offset_deg: angleDegreesFromConfig(assignment, "phase_offset") === ""
+        ? 0
+        : angleDegreesFromConfig(assignment, "phase_offset"),
+    })),
+  };
+}
+
+function graphEditorOptions(values) {
+  return values.map((value) => ({ value: String(value), label: String(value) }));
+}
+
+function mechanismBodyOptions(currentValue = "") {
+  const bodyIds = state.combinationBodies.map((body) => String(body.id));
+  const options = [{ value: "", label: "Global / no body" }];
+  state.combinationBodies.forEach((body) => {
+    options.push({ value: String(body.id), label: `${body.name} (${body.id})` });
+  });
+  const current = String(currentValue || "");
+  if (current && !bodyIds.includes(current)) {
+    options.push({ value: current, label: `Unknown body (${current})` });
+  }
+  return options;
+}
+
+function createGraphEditorField(collection, index, field) {
+  const label = document.createElement("label");
+  label.className = "graph-editor-field";
+  label.textContent = field.label;
+  const input = field.options
+    ? document.createElement("select")
+    : document.createElement("input");
+  input.dataset.graphCollection = collection;
+  input.dataset.graphIndex = String(index);
+  input.dataset.graphField = field.name;
+  input.setAttribute("aria-label", field.label);
+  if (field.options) {
+    for (const optionData of field.options) {
+      const option = document.createElement("option");
+      option.value = optionData.value;
+      option.textContent = optionData.label;
+      input.appendChild(option);
+    }
+  } else {
+    input.type = field.type || "text";
+    if (input.type === "number") {
+      input.step = "any";
+      input.inputMode = "decimal";
+    }
+  }
+  input.value = field.value === null || field.value === undefined ? "" : String(field.value);
+  const updateDraft = () => {
+    const draft = state.mechanismGraphEditorDraft;
+    if (draft?.[collection]?.[index]) {
+      draft[collection][index][field.name] = input.value;
+      mechanismGraphEditorStatus.textContent = "Unsaved graph edits. Apply the graph before solving or validating.";
+    }
+  };
+  input.addEventListener("input", updateDraft);
+  input.addEventListener("change", updateDraft);
+  label.appendChild(input);
+  return label;
+}
+
+function renderGraphEditorRows(container, collection, items, fieldsForItem) {
+  container.replaceChildren();
+  if (items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "curve-note graph-editor-empty";
+    empty.textContent = "No entries. Use the add button above to create one.";
+    container.appendChild(empty);
+    return;
+  }
+  items.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "graph-editor-row";
+    row.dataset.graphCollection = collection;
+    row.dataset.graphIndex = String(index);
+    for (const field of fieldsForItem(item)) {
+      row.appendChild(createGraphEditorField(collection, index, field));
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "graph-editor-remove";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      state.mechanismGraphEditorDraft[collection].splice(index, 1);
+      renderMechanismGraphEditor();
+      mechanismGraphEditorStatus.textContent = "Unsaved graph edits. Apply the graph before solving or validating.";
+    });
+    row.appendChild(remove);
+    container.appendChild(row);
+  });
+}
+
+function renderMechanismGraphEditor() {
+  const draft = state.mechanismGraphEditorDraft;
+  const enabled = Boolean(state.mechanismGraph && draft);
+  for (const button of [
+    mechanismGraphApplyButton,
+    mechanismGraphAddPointButton,
+    mechanismGraphAddMemberButton,
+    mechanismGraphAddOutputButton,
+    mechanismGraphAddDriverButton,
+    mechanismGraphAddAssignmentButton,
+  ]) {
+    button.disabled = !enabled;
+  }
+  if (!enabled) {
+    for (const container of [
+      mechanismPointEditor,
+      mechanismMemberEditor,
+      mechanismOutputEditor,
+      mechanismDriverEditor,
+      mechanismAssignmentEditor,
+    ]) {
+      container.replaceChildren();
+    }
+    return;
+  }
+  const pointIds = draft.points.map((point) => point.id);
+  const outputIds = draft.outputs.map((output) => output.id);
+  renderGraphEditorRows(mechanismPointEditor, "points", draft.points, (point) => [
+    { name: "id", label: "ID", value: point.id },
+    { name: "mode", label: "Mode", value: point.mode, options: [
+      { value: "fixed", label: "Fixed" },
+      { value: "driven", label: "Driven" },
+      { value: "free", label: "Free" },
+    ] },
+    { name: "body_id", label: "Body placement", value: point.body_id, options: mechanismBodyOptions(point.body_id) },
+    { name: "x_mm", label: "X (mm)", value: point.x_mm, type: "number" },
+    { name: "y_mm", label: "Y (mm)", value: point.y_mm, type: "number" },
+    { name: "envelope_radius_mm", label: "Envelope (mm)", value: point.envelope_radius_mm, type: "number" },
+  ]);
+  renderGraphEditorRows(mechanismMemberEditor, "members", draft.members, (member) => [
+    { name: "id", label: "ID", value: member.id },
+    { name: "point_a_id", label: "Point A", value: member.point_a_id, options: graphEditorOptions(pointIds) },
+    { name: "point_b_id", label: "Point B", value: member.point_b_id, options: graphEditorOptions(pointIds) },
+    { name: "length_mm", label: "Length (mm)", value: member.length_mm, type: "number" },
+    { name: "kind", label: "Kind", value: member.kind, options: [
+      { value: "arm", label: "Arm" },
+      { value: "rod", label: "Rod" },
+      { value: "rigid_brace", label: "Rigid brace" },
+    ] },
+    { name: "envelope_radius_mm", label: "Envelope (mm)", value: member.envelope_radius_mm, type: "number" },
+    { name: "assembly_id", label: "Assembly ID", value: member.assembly_id },
+  ]);
+  renderGraphEditorRows(mechanismOutputEditor, "outputs", draft.outputs, (output) => [
+    { name: "id", label: "ID", value: output.id },
+    { name: "pivot_point_id", label: "Pivot", value: output.pivot_point_id, options: graphEditorOptions(pointIds) },
+    { name: "endpoint_point_id", label: "Endpoint", value: output.endpoint_point_id, options: graphEditorOptions(pointIds) },
+    { name: "reference_body_id", label: "Reference body", value: output.reference_body_id, options: mechanismBodyOptions(output.reference_body_id) },
+    { name: "neutral_angle_deg", label: "Neutral (deg)", value: output.neutral_angle_deg, type: "number" },
+    { name: "minimum_angle_deg", label: "Min (deg)", value: output.minimum_angle_deg, type: "number" },
+    { name: "maximum_angle_deg", label: "Max (deg)", value: output.maximum_angle_deg, type: "number" },
+  ]);
+  renderGraphEditorRows(mechanismDriverEditor, "drivers", draft.drivers, (driver) => [
+    { name: "point_id", label: "Driven point", value: driver.point_id, options: graphEditorOptions(pointIds) },
+    { name: "input_id", label: "Input ID", value: driver.input_id },
+    { name: "center_x_mm", label: "Center X", value: driver.center_x_mm, type: "number" },
+    { name: "center_y_mm", label: "Center Y", value: driver.center_y_mm, type: "number" },
+    { name: "radius_mm", label: "Radius (mm)", value: driver.radius_mm, type: "number" },
+    { name: "neutral_angle_deg", label: "Neutral (deg)", value: driver.neutral_angle_deg, type: "number" },
+    { name: "input_ratio", label: "Input ratio", value: driver.input_ratio, type: "number" },
+    { name: "phase_offset_deg", label: "Phase (deg)", value: driver.phase_offset_deg, type: "number" },
+  ]);
+  renderGraphEditorRows(mechanismAssignmentEditor, "assignments", draft.assignments, (assignment) => [
+    { name: "output_id", label: "Output", value: assignment.output_id, options: graphEditorOptions(outputIds) },
+    { name: "wheel_id", label: "Wheel ID", value: assignment.wheel_id },
+    { name: "ratio", label: "Ratio", value: assignment.ratio, type: "number" },
+    { name: "phase_offset_deg", label: "Phase (deg)", value: assignment.phase_offset_deg, type: "number" },
+  ]);
+}
+
+function graphEditorNumber(value, label, { optional = false, positive = false, nonnegative = false } = {}) {
+  if (value === "" || value === null || value === undefined) {
+    if (optional) return null;
+    throw new Error(`${label} is required.`);
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || (positive && parsed <= 0) || (nonnegative && parsed < 0)) {
+    throw new Error(`${label} must be ${positive ? "positive" : "nonnegative"} and finite.`);
+  }
+  return parsed;
+}
+
+function readMechanismGraphEditor() {
+  const draft = state.mechanismGraphEditorDraft;
+  if (!draft) {
+    throw new Error("Build the mechanism graph before editing it.");
+  }
+  const points = draft.points.map((point, index) => ({
+    id: String(point.id || "").trim(),
+    mode: String(point.mode || "free"),
+    body_id: String(point.body_id || "").trim() || null,
+    neutral_position: {
+      x_mm: graphEditorNumber(point.x_mm, `Point ${index + 1} X`),
+      y_mm: graphEditorNumber(point.y_mm, `Point ${index + 1} Y`),
+    },
+    envelope_radius_mm: graphEditorNumber(point.envelope_radius_mm, `Point ${index + 1} envelope`, { nonnegative: true }),
+  }));
+  if (points.some((point) => !point.id)) {
+    throw new Error("Every point requires a unique ID.");
+  }
+  const pointIds = new Set(points.map((point) => point.id));
+  if (pointIds.size !== points.length) {
+    throw new Error("Point IDs must be unique.");
+  }
+  const members = draft.members.map((member, index) => ({
+    id: String(member.id || "").trim(),
+    point_a_id: String(member.point_a_id || "").trim(),
+    point_b_id: String(member.point_b_id || "").trim(),
+    length_mm: graphEditorNumber(member.length_mm, `Member ${index + 1} length`, { positive: true }),
+    kind: String(member.kind || "rod"),
+    envelope_radius_mm: graphEditorNumber(member.envelope_radius_mm, `Member ${index + 1} envelope`, { nonnegative: true }),
+    assembly_id: String(member.assembly_id || "").trim() || null,
+  }));
+  if (members.some((member) => !member.id || !member.point_a_id || !member.point_b_id)) {
+    throw new Error("Every member requires an ID and two point references.");
+  }
+  if (members.some((member) => member.point_a_id === member.point_b_id)) {
+    throw new Error("A member must connect two different points.");
+  }
+  if (members.some((member) => !pointIds.has(member.point_a_id) || !pointIds.has(member.point_b_id))) {
+    throw new Error("Every member endpoint must reference an existing point.");
+  }
+  const memberIds = new Set(members.map((member) => member.id));
+  if (memberIds.size !== members.length || [...memberIds].some((id) => pointIds.has(id))) {
+    throw new Error("Member IDs must be unique and must not overlap point IDs.");
+  }
+  const outputs = draft.outputs.map((output, index) => {
+    const result = {
+      id: String(output.id || "").trim(),
+      pivot_point_id: String(output.pivot_point_id || "").trim(),
+      endpoint_point_id: String(output.endpoint_point_id || "").trim(),
+      reference_body_id: String(output.reference_body_id || "").trim() || null,
+      neutral_angle_deg: graphEditorNumber(output.neutral_angle_deg, `Output ${index + 1} neutral angle`),
+    };
+    const minimum = graphEditorNumber(output.minimum_angle_deg, `Output ${index + 1} minimum angle`, { optional: true });
+    const maximum = graphEditorNumber(output.maximum_angle_deg, `Output ${index + 1} maximum angle`, { optional: true });
+    if (minimum !== null) result.minimum_angle_deg = minimum;
+    if (maximum !== null) result.maximum_angle_deg = maximum;
+    return result;
+  });
+  if (outputs.some((output) => !output.id || !output.pivot_point_id || !output.endpoint_point_id)) {
+    throw new Error("Every angle output requires an ID, pivot, and endpoint.");
+  }
+  if (outputs.some((output) => output.pivot_point_id === output.endpoint_point_id)) {
+    throw new Error("An angle output pivot and endpoint must be different points.");
+  }
+  if (outputs.some((output) => !pointIds.has(output.pivot_point_id) || !pointIds.has(output.endpoint_point_id))) {
+    throw new Error("Every angle output point must reference an existing point.");
+  }
+  if (outputs.some((output) => output.minimum_angle_deg !== undefined
+      && output.maximum_angle_deg !== undefined
+      && output.minimum_angle_deg >= output.maximum_angle_deg)) {
+    throw new Error("Angle output minimum limits must be below maximum limits.");
+  }
+  const outputIds = new Set(outputs.map((output) => output.id));
+  if (outputIds.size !== outputs.length) {
+    throw new Error("Angle output IDs must be unique.");
+  }
+  const drivers = draft.drivers.map((driver, index) => ({
+    point_id: String(driver.point_id || "").trim(),
+    input_id: String(driver.input_id || "").trim(),
+    center: {
+      x_mm: graphEditorNumber(driver.center_x_mm, `Driver ${index + 1} center X`),
+      y_mm: graphEditorNumber(driver.center_y_mm, `Driver ${index + 1} center Y`),
+    },
+    radius_mm: graphEditorNumber(driver.radius_mm, `Driver ${index + 1} radius`, { positive: true }),
+    neutral_angle_deg: graphEditorNumber(driver.neutral_angle_deg, `Driver ${index + 1} neutral angle`),
+    input_ratio: graphEditorNumber(driver.input_ratio, `Driver ${index + 1} input ratio`),
+    phase_offset_deg: graphEditorNumber(driver.phase_offset_deg, `Driver ${index + 1} phase`),
+  }));
+  if (drivers.some((driver) => !driver.point_id || !driver.input_id || !pointIds.has(driver.point_id))) {
+    throw new Error("Every driver requires an existing driven point and input ID.");
+  }
+  if (drivers.some((driver) => points.find((point) => point.id === driver.point_id)?.mode !== "driven")) {
+    throw new Error("Every driver point must have mode Driven.");
+  }
+  if (new Set(drivers.map((driver) => driver.point_id)).size !== drivers.length) {
+    throw new Error("Each driven point can have only one driver arc.");
+  }
+  const assignments = draft.assignments.map((assignment, index) => ({
+    output_id: String(assignment.output_id || "").trim(),
+    wheel_id: String(assignment.wheel_id || "").trim(),
+    ratio: graphEditorNumber(assignment.ratio, `Wheel map ${index + 1} ratio`),
+    phase_offset_deg: graphEditorNumber(assignment.phase_offset_deg, `Wheel map ${index + 1} phase`),
+  }));
+  if (assignments.some((assignment) => !assignment.output_id || !assignment.wheel_id)) {
+    throw new Error("Every wheel mapping requires an output and wheel ID.");
+  }
+  if (assignments.some((assignment) => !outputIds.has(assignment.output_id))) {
+    throw new Error("Every wheel mapping must reference an existing angle output.");
+  }
+  if (new Set(assignments.map((assignment) => assignment.wheel_id)).size !== assignments.length) {
+    throw new Error("Each wheel can be mapped only once.");
+  }
+  return {
+    graph: {
+      id: String(draft.graphId || "workspace_mechanism_graph").trim() || "workspace_mechanism_graph",
+      points,
+      members,
+      angle_outputs: outputs,
+    },
+    drivers,
+    assignments,
+  };
+}
+
+function applyMechanismGraphEdits() {
+  try {
+    const configuration = readMechanismGraphEditor();
+    state.mechanismGraph = configuration.graph;
+    state.mechanismDrivers = configuration.drivers;
+    state.steeringAssignments = configuration.assignments;
+    state.mechanismGraphEditorDraft = null;
+    state.workspaceDirty = true;
+    resetEngineeringEvidence(
+      "Graph changed. Solve the design again before validating the range.",
+      { preserveManeuver: true },
+    );
+    renderMechanismGraphConfiguration("Graph edits applied. Solve the design to generate new engineering evidence.");
+    mechanismGraphEditorStatus.textContent = "Graph edits applied. The saved revision is now out of date; save a new revision after solving.";
+  } catch (error) {
+    mechanismGraphEditorStatus.textContent = `Graph edits rejected: ${error.message}`;
+  }
+}
+
+function clearEngineeringVisualization() {
+  showSimulationDiagram();
+  diagram.replaceChildren();
+  const placeholder = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  placeholder.setAttribute("x", "0");
+  placeholder.setAttribute("y", "0");
+  placeholder.setAttribute("text-anchor", "middle");
+  placeholder.setAttribute("class", "diagram-placeholder");
+  placeholder.textContent = "Solve the active design to render engineering evidence";
+  diagram.appendChild(placeholder);
+  radiusValue.textContent = "n/a";
+  radiusChip.textContent = "Awaiting solve";
+  maxAngleValue.textContent = "n/a";
+  phaseValue.textContent = "n/a";
+  actualErrorValue.textContent = "n/a";
+  synchronizationErrorValue.textContent = "n/a";
+  linkageSteerValue.textContent = "n/a";
+  linkageErrorValue.textContent = "n/a";
+  linkageResidualValue.textContent = "n/a";
+  linkageBranchValue.textContent = "n/a";
+  wheelTable.replaceChildren();
+  synchronizationTable.replaceChildren();
+  bodyChainBodyCountValue.textContent = "n/a";
+  bodyChainJointCountValue.textContent = "n/a";
+  bodyChainRootValue.textContent = "n/a";
+  bodyChainTable.replaceChildren();
+  syncDisplayModeUi();
+}
+
+function resetEngineeringEvidence(summary, { preserveManeuver = false } = {}) {
+  state.currentPayload = null;
+  state.maneuverResolved = preserveManeuver && state.maneuverResolved;
+  state.currentValidationPass = false;
+  state.sweepValidationPayload = null;
+  state.acceptanceCriteriaDirty = false;
+  state.activeRevisionHasFullRangeEvidence = false;
+  state.acceptanceResult = null;
+  state.optimizationPayload = null;
+  currentValidationCard.dataset.status = "pending";
+  currentValidationStatus.textContent = "NOT RUN";
+  currentValidationSummary.textContent = summary;
+  currentValidationChecks.replaceChildren();
+  if (currentSteeringInterpretation && currentSteeringStatus && currentSteeringDetail) {
+    currentSteeringInterpretation.dataset.status = "pending";
+    currentSteeringStatus.textContent = "STEERING CRITERION PENDING";
+    currentSteeringDetail.textContent = "Steering accuracy is not classified until signed-off Monroc limits are entered and evaluated.";
+  }
+  renderFailureGuidance(currentValidationGuidance, []);
+  clearEngineeringVisualization();
+  resetOptimizationPanel();
+  renderMonrocAcceptance(null);
+  renderSweepValidation(null);
+  renderReviewControls();
+}
+
+function markWorkspaceDirty(summary, { invalidateMechanism = false } = {}) {
+  state.workspaceDirty = true;
+  if (invalidateMechanism && (state.mechanismGraph || state.mechanismDrivers.length || state.steeringAssignments.length)) {
+    state.mechanismGraph = null;
+    state.mechanismDrivers = [];
+    state.steeringAssignments = [];
+    state.mechanismGraphEditorDraft = null;
+    renderMechanismGraphConfiguration("Vehicle geometry changed. Rebuild the mechanism graph before solving.");
+  }
+  resetEngineeringEvidence(summary);
+  renderReviewControls();
+  updateExportLinks();
+  updateDxfSourceRetentionState();
+}
+
+function nextGraphEditorId(collection, prefix) {
+  const draft = state.mechanismGraphEditorDraft;
+  const existing = new Set((draft?.[collection] || []).map((item) => item.id || item.point_id || item.output_id));
+  let index = 1;
+  while (existing.has(`${prefix}_${index}`)) {
+    index += 1;
+  }
+  return `${prefix}_${index}`;
+}
+
+function addMechanismGraphEditorItem(collection) {
+  if (!state.mechanismGraphEditorDraft) {
+    return;
+  }
+  const draft = state.mechanismGraphEditorDraft;
+  const pointIds = draft.points.map((point) => point.id);
+  const outputIds = draft.outputs.map((output) => output.id);
+  if (collection === "points") {
+    draft.points.push({
+      id: nextGraphEditorId("points", "point"),
+      mode: "free",
+      body_id: "",
+      x_mm: 0,
+      y_mm: 0,
+      envelope_radius_mm: 0,
+    });
+  } else if (collection === "members") {
+    draft.members.push({
+      id: nextGraphEditorId("members", "member"),
+      point_a_id: pointIds[0] || "",
+      point_b_id: pointIds[1] || pointIds[0] || "",
+      length_mm: 100,
+      kind: "rod",
+      envelope_radius_mm: 0,
+      assembly_id: "",
+    });
+  } else if (collection === "outputs") {
+    draft.outputs.push({
+      id: nextGraphEditorId("outputs", "output"),
+      pivot_point_id: pointIds[0] || "",
+      endpoint_point_id: pointIds[1] || pointIds[0] || "",
+      neutral_angle_deg: 0,
+      minimum_angle_deg: "",
+      maximum_angle_deg: "",
+    });
+  } else if (collection === "drivers") {
+    const drivenPoint = draft.points.find((point) => point.mode === "driven") || draft.points[0];
+    draft.drivers.push({
+      point_id: drivenPoint?.id || "",
+      input_id: "articulation",
+      center_x_mm: 0,
+      center_y_mm: 0,
+      radius_mm: 100,
+      neutral_angle_deg: 0,
+      input_ratio: 1,
+      phase_offset_deg: 0,
+    });
+  } else if (collection === "assignments") {
+    draft.assignments.push({
+      output_id: outputIds[0] || "",
+      wheel_id: `wheel_${draft.assignments.length + 1}`,
+      ratio: 1,
+      phase_offset_deg: 0,
+    });
+  }
+  renderMechanismGraphEditor();
+  mechanismGraphEditor.open = true;
+  mechanismGraphEditorStatus.textContent = "Unsaved graph edits. Apply the graph before solving or validating.";
+}
+
+function renderMechanismGraphConfiguration(statusText = null) {
+  syncMechanismGraphEditorDraft();
+  const points = state.mechanismGraph?.points || [];
+  const members = state.mechanismGraph?.members || [];
+  const assignments = state.steeringAssignments || [];
+  mechanismGraphPointCount.textContent = String(points.length);
+  mechanismGraphMemberCount.textContent = String(members.length);
+  mechanismGraphAssignmentCount.textContent = String(assignments.length);
+  mechanismGraphMapping.replaceChildren();
+  for (const assignment of assignments) {
+    const row = document.createElement("div");
+    row.className = "wheel-row";
+    const target = document.createElement("span");
+    target.className = "label";
+    target.textContent = assignment.wheel_id;
+    const source = document.createElement("span");
+    source.className = "value";
+    source.textContent = assignment.output_id;
+    row.append(target, source);
+    mechanismGraphMapping.appendChild(row);
+  }
+  mechanismGraphSolveButton.disabled = assignments.length === 0;
+  mechanismGraphStatus.textContent = statusText
+    || `Restored graph with ${state.mechanismDrivers.length} articulation drivers and ${assignments.length} wheel mappings.`;
+  renderMechanismGraphEditor();
+}
+
+async function solveMechanismGraphDesign() {
+  if (!state.mechanismGraph) {
+    throw new Error("Build the mechanism graph first.");
+  }
+  await calculateCombinationStudy();
+  mechanismGraphStatus.textContent = state.currentValidationPass
+    ? "Graph design solved and all available hard checks pass."
+    : "Graph design solved, but the current design fails one or more hard checks.";
+}
+
+async function calculateCombinationStudy(betaOverride = null) {
+  if (betaOverride !== null && state.combinationBodies.length > 1) {
+    state.combinationBodies[1].articulationDeg = Number(betaOverride);
+  }
+  const radius = Number(combinationTurnRadiusInput.value);
+  if (!Number.isFinite(radius) || Math.abs(radius) < 1e-9) {
+    throw new Error("Signed root radius must be a non-zero finite number.");
+  }
+  const betaDeg = state.combinationBodies[1]?.articulationDeg || 0;
+  combinationCalculateButton.disabled = true;
+  combinationStatus.textContent = "Resolving body poses, rolling constraints, and steering angles...";
+  try {
+    const response = await fetch("/api/calculate/kinematic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        beta_deg: betaDeg,
+        root_turn_radius_mm: radius,
+        combination: serializedCombination(),
+        linkage: state.mechanismGraph ? undefined : serializedLinkageConfig(),
+        mechanism_graph: state.mechanismGraph,
+        mechanism_drivers: state.mechanismGraph ? state.mechanismDrivers : undefined,
+        steering_assignments: state.mechanismGraph ? state.steeringAssignments : undefined,
+        clearance_target_mm: Number(state.optimizationSettings.clearanceTargetMm),
+      }),
+    });
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      throw new Error(errorPayload?.message || `HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    state.combinationActive = true;
+    state.optimizationPayload = null;
+    betaSlider.value = String(betaDeg);
+    optimizeButton.disabled = !state.mechanismGraph;
+    setOptimizationProposalState(false);
+    optimizeFeasibilityCard.dataset.status = "pending";
+    optimizeFeasibilityStatus.textContent = state.mechanismGraph ? "READY" : "BLOCKED";
+    optimizeFeasibilityReasons.textContent = state.mechanismGraph
+      ? "Graph-native optimization is available. Run it only after the mechanism graph has been solved."
+      : "Build and solve the mechanism graph before running optimization for this combination.";
+    optimizeRunStats.textContent = state.mechanismGraph ? "Ready to run" : "Not run for the active combination";
+    updateSummary(payload, { refreshCharts: false });
+    // Recompute the validation control state after a graph solve. Without this
+    // refresh the validation panel can retain the disabled state from the
+    // pre-combination project load.
+    renderSweepValidation(state.sweepValidationPayload);
+    await renderActiveView(payload);
+    updateExportLinks();
+    const residual = Number(payload.combination_kinematics?.maximum_constraint_residual_mm || 0);
+    combinationStatus.textContent = `Resolved ${payload.vehicle_combination.body_count} bodies and ${payload.vehicle.axle_count} axles. Maximum rolling residual ${residual.toFixed(3)} mm.`;
+  } finally {
+    combinationCalculateButton.disabled = false;
+  }
+}
+
 function customTurnRadius() {
   const explicitRadius = customTurnRadiusInput.value.trim();
   if (explicitRadius) {
@@ -1675,6 +4579,8 @@ function customTurnRadius() {
 }
 
 async function calculateCustomAxleStudy() {
+  state.combinationActive = false;
+  optimizeButton.disabled = false;
   customAxleApplyButton.disabled = true;
   customAxleStatus.textContent = "Calculating ideal steering...";
   try {
@@ -1746,6 +4652,8 @@ async function activateImportedVehicle(payload) {
     return false;
   }
 
+  markWorkspaceDirty("Imported CAD geometry changed the active study. Save a new revision before review.");
+
   const axleSpan = Number(vehicle.axle_span_mm);
   const track = Math.max(...vehicle.axles.map((axle) => Number(axle.track_mm) || 0));
   state.geometry = {
@@ -1770,9 +4678,17 @@ async function activateImportedVehicle(payload) {
 }
 
 function refreshSweptPathPreview(betaDeg = Number(betaSlider.value)) {
+  if (blockDiagnosticPreview(sweptPathImage, sweptPathStatus, "Swept-path preview")) {
+    return;
+  }
   const mode = optimizeMode.value;
   const query = `beta_deg=${encodeURIComponent(betaDeg)}&mode=${encodeURIComponent(mode)}&${geometryQuery()}&step_deg=${encodeURIComponent(readCurveStep())}&beta_min_deg=${encodeURIComponent(state.betaRange.minDeg)}&beta_max_deg=${encodeURIComponent(state.betaRange.maxDeg)}${vehicleConfigQuery()}`;
-  sweptPathImage.src = `/api/swept-path.svg?${query}`;
+  void loadDiagnosticPreview(
+    sweptPathImage,
+    sweptPathStatus,
+    `/api/swept-path.svg?${query}`,
+    "Swept-path preview",
+  );
 }
 
 function getDisplayModeConfig() {
@@ -1917,6 +4833,64 @@ function renderLinkageOverlay(payload) {
       y: companionPivot.y + 52,
       class: "linkage-label",
     })).textContent = "Companion knuckle";
+  }
+}
+
+function renderMechanismGraphOverlay(payload) {
+  const graphPayload = payload.mechanism_graph;
+  if (!graphPayload?.mechanism || !graphPayload?.state) {
+    return;
+  }
+
+  const positions = graphPayload.state.point_positions || {};
+  for (const member of graphPayload.mechanism.members || []) {
+    const pointA = positions[member.point_a_id];
+    const pointB = positions[member.point_b_id];
+    if (!pointA || !pointB) {
+      continue;
+    }
+    const start = toSvgPoint(pointA);
+    const end = toSvgPoint(pointB);
+    diagram.appendChild(svgEl("line", {
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+      class: `mechanism-member mechanism-member-${member.kind}`,
+      "data-member-id": member.id,
+    }));
+  }
+
+  for (const point of graphPayload.mechanism.points || []) {
+    const position = positions[point.id];
+    if (!position) {
+      continue;
+    }
+    const marker = toSvgPoint(position);
+    diagram.appendChild(svgEl("circle", {
+      cx: marker.x,
+      cy: marker.y,
+      r: point.mode === "fixed" ? 28 : 22,
+      class: `mechanism-point mechanism-point-${point.mode}`,
+      "data-point-id": point.id,
+    }));
+  }
+
+  const outputById = new Map(
+    (graphPayload.mechanism.angle_outputs || []).map((output) => [output.id, output]),
+  );
+  for (const assignment of payload.mechanism_mapping?.steering_assignments || []) {
+    const output = outputById.get(assignment.output_id);
+    const position = output ? positions[output.endpoint_point_id] : null;
+    if (!position) {
+      continue;
+    }
+    const labelPoint = toSvgPoint(position);
+    diagram.appendChild(svgEl("text", {
+      x: labelPoint.x + 48,
+      y: labelPoint.y - 40,
+      class: "mechanism-output-label",
+    })).textContent = assignment.wheel_id;
   }
 }
 
@@ -2092,7 +5066,15 @@ function renderDiagram(payload, options = {}) {
     }));
 
     const actualAxle = actualAxles.get(axle.axle_id);
-    for (const [side, wheel] of [["left_wheel", axle.left_wheel], ["right_wheel", axle.right_wheel]]) {
+    const wheels = Array.isArray(axle.wheels) && axle.wheels.length > 0
+      ? axle.wheels
+      : [axle.left_wheel, axle.right_wheel];
+    const actualWheels = new Map(
+      (actualAxle?.wheels || [actualAxle?.left_wheel, actualAxle?.right_wheel])
+        .filter(Boolean)
+        .map((wheel) => [wheel.wheel_id, wheel]),
+    );
+    for (const wheel of wheels.filter(Boolean)) {
       const center = toSvgPoint(wheel.center);
       const heading = lineFromHeading(wheel.center, wheel.heading_rad, 820);
       diagram.appendChild(svgEl("line", {
@@ -2102,7 +5084,7 @@ function renderDiagram(payload, options = {}) {
         y2: heading.y2,
         class: "wheel-heading",
       }));
-      const actualWheel = actualAxle?.[side];
+      const actualWheel = actualWheels.get(wheel.wheel_id);
       if (actualWheel) {
         const actualHeading = lineFromHeading(wheel.center, actualWheel.heading_rad, 900);
         diagram.appendChild(svgEl("line", {
@@ -2133,6 +5115,7 @@ function renderDiagram(payload, options = {}) {
 
   renderClearanceOverlay(payload);
   renderLinkageOverlay(payload);
+  renderMechanismGraphOverlay(payload);
   if (options.showError) {
     renderErrorOverlay(payload);
   }
@@ -2152,7 +5135,10 @@ function renderDiagram(payload, options = {}) {
     })).textContent = "ICR";
 
     for (const axle of payload.axles) {
-      for (const wheel of [axle.left_wheel, axle.right_wheel]) {
+      const wheels = Array.isArray(axle.wheels) && axle.wheels.length > 0
+        ? axle.wheels
+        : [axle.left_wheel, axle.right_wheel];
+      for (const wheel of wheels.filter(Boolean)) {
         const center = toSvgPoint(wheel.center);
         diagram.appendChild(svgEl("line", {
           x1: center.x,
@@ -2166,7 +5152,208 @@ function renderDiagram(payload, options = {}) {
   }
 }
 
+function renderCurrentValidation(payload) {
+  const linkageState = payload.linkage?.state;
+  const graphState = payload.mechanism_graph?.state;
+  const linkageResiduals = linkageState
+    ? [
+      linkageState.input_stage_error_mm,
+      linkageState.tie_rod_error_mm,
+      linkageState.companion_tie_rod_error_mm,
+    ].filter((value) => value !== null && value !== undefined).map((value) => Math.abs(Number(value)))
+    : [];
+  const maximumLinkageResidual = Math.max(...linkageResiduals, 0);
+  const maximumGraphResidual = graphState
+    ? Math.abs(Number(graphState.maximum_residual_mm))
+    : null;
+  const combinationResidual = payload.combination_kinematics?.maximum_constraint_residual_mm;
+  const minimumClearance = payload.clearance?.minimum_clearance_mm;
+  const clearanceTarget = Number(state.optimizationSettings.clearanceTargetMm);
+  const checks = [
+    {
+      id: "KINEMATICS",
+      label: "Kinematics",
+      pass: combinationResidual === null || combinationResidual === undefined || Number(combinationResidual) <= 0.01,
+      detail: combinationResidual === null || combinationResidual === undefined
+        ? "Single-layout solve completed"
+        : `Maximum rolling residual ${Number(combinationResidual).toFixed(3)} mm`,
+    },
+    {
+      id: "MECHANISM",
+      label: "Mechanism",
+      pass: (Boolean(linkageState) && maximumLinkageResidual <= 0.01)
+        || (maximumGraphResidual !== null && maximumGraphResidual <= 0.01),
+      detail: graphState
+        ? `Graph residual ${maximumGraphResidual.toFixed(3)} mm across all rigid members`
+        : (linkageState
+          ? `Maximum rigid-link residual ${maximumLinkageResidual.toFixed(3)} mm`
+          : "No physical mechanism has been solved"),
+    },
+    {
+      id: "COLLISION",
+      label: "Collision",
+      pass: payload.clearance?.collision_detected === false,
+      detail: payload.clearance?.collision_detected === false
+        ? "No non-connected component overlap"
+        : "Collision detected or not evaluated",
+    },
+    {
+      id: "CLEARANCE",
+      label: "Clearance",
+      pass: minimumClearance !== null
+        && minimumClearance !== undefined
+        && Number(minimumClearance) >= clearanceTarget,
+      detail: minimumClearance === null || minimumClearance === undefined
+        ? `Not evaluated; ${clearanceTarget.toFixed(1)} mm required`
+        : `${Number(minimumClearance).toFixed(1)} mm available; ${clearanceTarget.toFixed(1)} mm required`,
+    },
+  ];
+
+  currentValidationChecks.replaceChildren();
+  for (const check of checks) {
+    const row = document.createElement("div");
+    row.className = "validation-check";
+    row.dataset.status = check.pass ? "pass" : "fail";
+    const status = document.createElement("strong");
+    status.textContent = check.pass ? "PASS" : "FAIL";
+    const detail = document.createElement("span");
+    detail.textContent = `${check.label}: ${check.detail}`;
+    row.append(status, detail);
+    currentValidationChecks.appendChild(row);
+  }
+
+  renderCurrentSteeringInterpretation(payload);
+
+  const passed = checks.filter((check) => check.pass).length;
+  state.currentValidationPass = passed === checks.length;
+  currentValidationCard.dataset.status = state.currentValidationPass ? "pass" : "fail";
+  currentValidationStatus.textContent = state.currentValidationPass ? "PASS" : "FAIL";
+  currentValidationSummary.textContent = `${passed} of ${checks.length} hard checks passed.`;
+  renderFailureGuidance(
+    currentValidationGuidance,
+    checks.filter((check) => !check.pass).map((check) => check.id),
+  );
+  renderReleaseChecklist();
+  renderProjectDashboardStatus();
+  updateExportLinks();
+}
+
+function renderCurrentSteeringInterpretation(payload) {
+  if (!currentSteeringInterpretation || !currentSteeringStatus || !currentSteeringDetail) {
+    return;
+  }
+  const maximumError = Number(payload?.metrics?.max_abs_wheel_error_deg);
+  const errorText = Number.isFinite(maximumError)
+    ? `Current-pose maximum ideal-versus-actual wheel error: ${maximumError.toFixed(2)} deg.`
+    : "Current-pose ideal-versus-actual wheel error is unavailable.";
+  const acceptance = state.acceptanceCriteriaDirty ? null : state.acceptanceResult;
+  const steeringCheck = acceptance?.checks?.find((check) => check.id === "STEERING_ACCURACY");
+  if (steeringCheck?.status === "PASS" && acceptance?.criteria_approval?.status === "APPROVED") {
+    currentSteeringInterpretation.dataset.status = "pass";
+    currentSteeringStatus.textContent = "STEERING CRITERION PASS";
+    currentSteeringDetail.textContent = `${errorText} The steering criterion passed against the approved Monroc profile.`;
+    return;
+  }
+  if (steeringCheck?.status === "FAIL" && acceptance?.criteria_approval?.status === "APPROVED") {
+    currentSteeringInterpretation.dataset.status = "fail";
+    currentSteeringStatus.textContent = "STEERING CRITERION FAIL";
+    currentSteeringDetail.textContent = `${errorText} Correct the steering mechanism or the approved-case limit before review.`;
+    return;
+  }
+  currentSteeringInterpretation.dataset.status = "pending";
+  currentSteeringStatus.textContent = "STEERING CRITERION PENDING";
+  currentSteeringDetail.textContent = `${errorText} Enter signed-off Monroc limits below and match the approved profile to classify this result; physical feasibility PASS is not steering acceptance.`;
+}
+
+function renderSweepValidation(payload) {
+  state.sweepValidationPayload = payload || null;
+  sweepValidationButton.disabled = !state.combinationActive || !state.mechanismGraph;
+  if (!payload) {
+    sweepValidationVerdict.textContent = "NOT RUN";
+    sweepValidationSolved.textContent = "n/a";
+    sweepValidationClearance.textContent = "n/a";
+    sweepValidationFailure.textContent = "n/a";
+    sweepValidationStatus.textContent = "Build and solve the mechanism graph, then validate every articulation pose.";
+    renderFailureGuidance(sweepValidationGuidance, []);
+    renderReleaseChecklist();
+    renderProjectDashboardStatus();
+    updateExportLinks();
+    return;
+  }
+  const status = String(payload.status || "FAIL");
+  sweepValidationVerdict.textContent = status;
+  sweepValidationSolved.textContent = `${payload.solved_sample_count ?? 0} / ${payload.sample_count ?? 0}`;
+  sweepValidationClearance.textContent = payload.minimum_clearance_mm === null
+    || payload.minimum_clearance_mm === undefined
+    ? "n/a"
+    : formatDistance(Number(payload.minimum_clearance_mm));
+  const firstFailure = Array.isArray(payload.violations) && payload.violations.length > 0
+    ? payload.violations[0]
+    : null;
+  const formatJointAngles = (sample) => {
+    const values = sample?.joint_angles_deg;
+    if (!values || typeof values !== "object") return "";
+    return Object.entries(values)
+      .map(([jointId, value]) => `${jointId} ${Number(value).toFixed(1)} deg`)
+      .join(" / ");
+  };
+  sweepValidationFailure.textContent = firstFailure
+    ? `${formatJointAngles(firstFailure) || `${Number(firstFailure.beta_deg).toFixed(1)} deg`} / ${(firstFailure.checks || []).join(", ")}`
+    : "none";
+  sweepValidationStatus.textContent = status === "PASS"
+    ? `All ${payload.sample_count} configured joint poses passed the hard checks.`
+    : payload.sampling_complete === false
+      ? "Validation was not completed; the configured joint grid is too large."
+      : `${payload.violations?.length || 0} of ${payload.sample_count} configured joint poses failed one or more hard checks.`;
+  renderFailureGuidance(
+    sweepValidationGuidance,
+    payload.failure_guidance || firstFailure?.guidance || [],
+  );
+  renderReleaseChecklist();
+  renderProjectDashboardStatus();
+  updateExportLinks();
+}
+
+async function runCombinationSweepValidation() {
+  if (!state.combinationActive || !state.mechanismGraph) {
+    throw new Error("Build the multi-body mechanism graph first.");
+  }
+  const stepDeg = Number(sweepValidationStepInput.value);
+  if (!Number.isFinite(stepDeg) || stepDeg <= 0) {
+    throw new Error("Full-range step must be a positive number.");
+  }
+  sweepValidationButton.disabled = true;
+  sweepValidationStatus.textContent = "Solving every articulation pose and checking clearance...";
+  try {
+    const response = await fetch("/api/calculate/combination-sweep", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        combination: serializedCombination(),
+        root_turn_radius_mm: Number(combinationTurnRadiusInput.value),
+        mechanism_graph: state.mechanismGraph,
+        mechanism_drivers: state.mechanismDrivers,
+        steering_assignments: state.steeringAssignments,
+        beta_min_deg: state.betaRange.minDeg,
+        beta_max_deg: state.betaRange.maxDeg,
+        step_deg: stepDeg,
+        clearance_target_mm: Number(state.optimizationSettings.clearanceTargetMm),
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text() || `HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    renderSweepValidation(payload);
+    updateExportLinks();
+  } finally {
+    sweepValidationButton.disabled = !state.combinationActive || !state.mechanismGraph;
+  }
+}
+
 function updateSummary(payload, options = {}) {
+  state.currentPayload = payload;
+  state.maneuverResolved = Boolean(payload?.vehicle_combination);
   betaValue.textContent = `${payload.beta_deg.toFixed(0)} deg`;
   betaLabel.textContent = `${payload.beta_deg.toFixed(0)} deg`;
   radiusValue.textContent = payload.turn_radius_mm === null ? "Straight" : formatDistance(payload.turn_radius_mm);
@@ -2192,6 +5379,15 @@ function updateSummary(payload, options = {}) {
     linkageErrorValue.textContent = `${formatAngle(payload.metrics.linkage_vs_ideal_front_left_deg)} / ${formatAngle(payload.metrics.linkage_vs_ideal_front_right_deg)}`;
     linkageResidualValue.textContent = `${payload.linkage.state.input_stage_error_mm.toFixed(3)} / ${payload.linkage.state.tie_rod_error_mm.toFixed(3)} / ${payload.linkage.state.companion_tie_rod_error_mm === null ? "n/a" : payload.linkage.state.companion_tie_rod_error_mm.toFixed(3)} mm`;
     linkageBranchValue.textContent = `${payload.linkage.state.input_branch_index} / ${payload.linkage.state.steering_branch_index} / ${payload.linkage.state.companion_branch_index ?? "n/a"}`;
+  } else if (payload.mechanism_graph?.state) {
+    const graphState = payload.mechanism_graph.state;
+    const outputAngles = Object.values(graphState.output_angles_deg || {});
+    linkageSteerValue.textContent = outputAngles.length === 0
+      ? "n/a"
+      : outputAngles.slice(0, 2).map((value) => formatAngle(Number(value))).join(" / ");
+    linkageErrorValue.textContent = formatAngle(payload.metrics?.max_abs_wheel_error_deg);
+    linkageResidualValue.textContent = `${Number(graphState.maximum_residual_mm).toFixed(3)} mm max`;
+    linkageBranchValue.textContent = `Graph solve / ${graphState.iterations} iterations`;
   }
 
   if (payload.clearance) {
@@ -2211,6 +5407,7 @@ function updateSummary(payload, options = {}) {
   }
 
   renderVehicleCombinationSummary(payload);
+  renderCurrentValidation(payload);
   if (options.refreshCharts !== false && payload.beta_deg !== null && payload.beta_deg !== undefined) {
     refreshSteeringCurvesPreview(payload.beta_deg);
     refreshSweptPathPreview(payload.beta_deg);
@@ -2231,6 +5428,23 @@ function formatOptimizationClearance(metrics) {
   return beta === null || beta === undefined
     ? formatDistance(metrics.minimum_clearance_mm)
     : `${formatDistance(metrics.minimum_clearance_mm)} @ ${beta.toFixed(1)} deg`;
+}
+
+function resetOptimizationPanel() {
+  state.optimizationPayload = null;
+  optimizeFeasibilityCard.dataset.status = "pending";
+  optimizeFeasibilityStatus.textContent = "NOT RUN";
+  optimizeFeasibilityReasons.textContent = "Optimization is optional. Run it after the current model is defined and the engineering checks are understood.";
+  optimizeBaselineScore.textContent = "n/a";
+  optimizeOptimizedScore.textContent = "n/a";
+  optimizeBaselineRms.textContent = "n/a";
+  optimizeOptimizedRms.textContent = "n/a";
+  optimizeBaselineClearance.textContent = "n/a";
+  optimizeOptimizedClearance.textContent = "n/a";
+  optimizeRunStats.textContent = "Not run";
+  renderOptimizationVariableConfig([]);
+  renderOptimizationVariables([]);
+  setOptimizationProposalState(false);
 }
 
 function updateOptimizationSummary(payload) {
@@ -2266,13 +5480,20 @@ function updateOptimizationSummary(payload) {
   optimizeOptimizedRms.textContent = payload.optimized ? formatAngle(payload.optimized.rms_error_deg) : "n/a";
   optimizeBaselineClearance.textContent = formatOptimizationClearance(payload.baseline);
   optimizeOptimizedClearance.textContent = formatOptimizationClearance(payload.optimized);
-  optimizeRunStats.textContent = `${payload.mode} / ${payload.iterations} it / ${payload.evaluations} eval / ${payload.improved ? "improved" : "no change"}`;
+  const proposalFeasible = payload.optimized?.feasible === true;
+  const violations = Array.isArray(payload.optimized?.violations)
+    ? payload.optimized.violations
+    : [];
+  optimizeFeasibilityCard.dataset.status = proposalFeasible ? "pass" : "fail";
+  optimizeFeasibilityStatus.textContent = proposalFeasible ? "PASS" : "FAIL";
+  optimizeFeasibilityReasons.textContent = proposalFeasible
+    ? `All hard constraints satisfied, including ${formatDistance(objective?.clearance_target_mm)} minimum clearance.`
+    : (violations.join(", ") || "No feasible proposal was produced.");
+  optimizeRunStats.textContent = `${proposalFeasible ? "PASS" : "FAIL"} / ${payload.mode} / ${payload.iterations} it / ${payload.evaluations} eval`;
   renderOptimizationVariableConfig(payload.variables_before || payload.variables_after || []);
   renderOptimizationVariables(payload.variables_after || []);
-  const hasProposal = Boolean(payload.optimized);
-  optimizeCompareButton.disabled = !hasProposal;
-  optimizeApplyButton.disabled = !hasProposal || !state.currentProjectId;
-  optimizeRejectButton.disabled = !hasProposal;
+  const hasProposal = Boolean(payload.optimized) && proposalFeasible;
+  setOptimizationProposalState(hasProposal);
 }
 
 function getActiveRevision(project) {
@@ -2282,18 +5503,169 @@ function getActiveRevision(project) {
   return project.revisions.find((revision) => revision.id === project.active_revision_id) || project.revisions[0];
 }
 
+function authHeaders() {
+  return {
+    "Content-Type": "application/json",
+    ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {}),
+  };
+}
+
+function renderAuthStatus() {
+  authLogoutButton.disabled = !state.authToken;
+  authLoginButton.disabled = Boolean(state.authToken);
+  if (state.authPrincipal) {
+    authStatus.textContent = `Signed in as ${state.authPrincipal.display_name} (${state.authPrincipal.role}) in ${state.authPrincipal.organization_id}.`;
+  } else {
+    authStatus.textContent = state.authRequired
+      ? "Sign in is required for project changes and approvals."
+      : "Local development mode. Authentication is available but not required.";
+  }
+  renderAccessControlledControls();
+  renderReviewControls();
+}
+
+async function loadReviewerUsers() {
+  if (!hasPermission("user:manage")) {
+    state.reviewerUsers = [];
+    renderReviewControls();
+    return;
+  }
+  try {
+    const response = await fetch("/api/users", { headers: authHeaders() });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    state.reviewerUsers = Array.isArray(payload.users) ? payload.users : [];
+  } catch (error) {
+    state.reviewerUsers = [];
+  }
+  renderReviewControls();
+}
+
+async function loadSaaSStatus() {
+  try {
+    const response = await fetch("/api/saas/status");
+    const status = await response.json();
+    state.authRequired = status.auth_required === true;
+    state.artifactStorageBackend = status.artifact_storage || "response-only";
+    if (state.authToken) {
+      const sessionResponse = await fetch("/api/auth/session", {
+        headers: { Authorization: `Bearer ${state.authToken}` },
+      });
+      if (sessionResponse.ok) {
+        state.authPrincipal = (await sessionResponse.json()).principal;
+      } else {
+        state.authToken = null;
+        sessionStorage.removeItem("easytowing_auth_token");
+      }
+    }
+    await loadReviewerUsers();
+  } catch (error) {
+    authStatus.textContent = `Workspace security status unavailable: ${error.message}`;
+  }
+  renderAuthStatus();
+  updateDxfSourceRetentionState();
+}
+
+async function signIn() {
+  authLoginButton.disabled = true;
+  authStatus.textContent = "Signing in...";
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organization_id: authOrganizationInput.value.trim(),
+        email: authEmailInput.value.trim(),
+        password: authPasswordInput.value,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    state.authToken = payload.token;
+    state.authPrincipal = payload.principal;
+    sessionStorage.setItem("easytowing_auth_token", state.authToken);
+    authPasswordInput.value = "";
+    await loadReviewerUsers();
+    renderAuthStatus();
+    await refreshProjectPanel();
+  } finally {
+    renderAuthStatus();
+  }
+}
+
+async function signOut() {
+  try {
+    if (state.authToken) {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${state.authToken}` },
+      });
+    }
+  } finally {
+    state.authToken = null;
+    state.authPrincipal = null;
+    state.currentProjectId = null;
+    state.activeProjectRevisionId = null;
+    state.approvalStatus = null;
+    state.approvalHistory = [];
+    state.workspaceDirty = false;
+    state.activeRevisionHasFullRangeEvidence = false;
+    localStorage.removeItem("easytowing_project_id");
+    sessionStorage.removeItem("easytowing_auth_token");
+    window.location.reload();
+  }
+}
+
 async function loadProjectList() {
-  const response = await fetch("/api/projects");
-  return response.json();
+  const response = await fetch("/api/projects", { headers: authHeaders() });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.message || `HTTP ` + response.status);
+  }
+  return payload;
 }
 
 async function loadProjectDetail(projectId) {
-  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
-  return response.json();
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { headers: authHeaders() });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.message || `HTTP ` + response.status);
+  }
+  return payload;
+}
+
+async function loadRevisionArtifacts() {
+  state.cadSourceArtifact = null;
+  if (!state.currentProjectId || !state.activeProjectRevisionId) {
+    updateDxfSourceRetentionState();
+    return;
+  }
+  try {
+    const path = `/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions/${encodeURIComponent(state.activeProjectRevisionId)}/artifacts`;
+    const response = await fetch(path, { headers: authHeaders() });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || `HTTP ${response.status}`);
+    }
+    state.cadSourceArtifact = (payload.artifacts || []).find(
+      (artifact) => artifact.artifact_type === "cad-source-dxf",
+    ) || null;
+  } catch (error) {
+    state.cadSourceArtifact = null;
+  }
+  updateDxfSourceRetentionState();
 }
 
 async function renderProjectFromDetail(project) {
   state.currentProjectId = project?.id ?? null;
+  state.maneuverResolved = false;
+  state.acceptanceCriteriaDirty = false;
+  state.workspaceDirty = false;
+  resetOptimizationPanel();
   if (state.currentProjectId) {
     localStorage.setItem("easytowing_project_id", state.currentProjectId);
   }
@@ -2302,11 +5674,42 @@ async function renderProjectFromDetail(project) {
     return;
   }
 
+  await loadApprovalStatus();
+  await loadRevisionArtifacts();
+
   projectNameInput.value = project.name || "Reference Demo Project";
   const activeRevision = getActiveRevision(project);
   if (!activeRevision) {
+    state.acceptanceResult = null;
+    renderMonrocAcceptance(null);
+    state.activeRevisionHasFullRangeEvidence = false;
+    renderReleaseChecklist();
     return;
   }
+
+  const acceptanceRecord = activeRevision.snapshot?.monroc_acceptance;
+  state.acceptanceResult = acceptanceRecord?.result || null;
+  const storedAcceptanceCriteria = acceptanceRecord?.criteria;
+  if (storedAcceptanceCriteria) {
+    acceptanceCaseIdInput.value = storedAcceptanceCriteria.case_id || "";
+    acceptanceMinClearanceInput.value = String(storedAcceptanceCriteria.minimum_clearance_mm ?? "");
+    acceptanceMaxWheelErrorInput.value = String(storedAcceptanceCriteria.maximum_wheel_error_deg ?? "");
+    acceptanceMaxSyncErrorInput.value = String(storedAcceptanceCriteria.maximum_synchronization_error_deg ?? "");
+    acceptanceMaxResidualInput.value = String(storedAcceptanceCriteria.maximum_mechanism_residual_mm ?? "0.01");
+    acceptanceRequireFullRangeInput.checked = storedAcceptanceCriteria.require_full_range !== false;
+  } else {
+    acceptanceCaseIdInput.value = "";
+    acceptanceMinClearanceInput.value = "";
+    acceptanceMaxWheelErrorInput.value = "";
+    acceptanceMaxSyncErrorInput.value = "";
+    acceptanceMaxResidualInput.value = "0.01";
+    acceptanceRequireFullRangeInput.checked = true;
+  }
+  renderMonrocAcceptance(state.acceptanceResult);
+
+  state.activeRevisionHasFullRangeEvidence = activeRevision.combination_config
+    ? activeRevision.snapshot?.sweep_validation?.status === "PASS"
+    : Boolean(activeRevision.accepted_optimization);
 
   projectNoteInput.value = activeRevision.note || "Current design snapshot";
   setBetaRange(
@@ -2342,9 +5745,38 @@ async function renderProjectFromDetail(project) {
     state.customAxles = [];
   }
   renderCustomAxleConfig();
+  updateDxfSourceRetentionState();
   state.linkageConfig = storedLinkageConfig(activeRevision.linkage_config);
   renderLinkageConfig();
   renderDesignCases();
+  if (activeRevision.combination_config) {
+    restoreCombinationConfiguration(activeRevision.combination_config);
+    combinationTurnRadiusInput.value = String(activeRevision.root_turn_radius_mm ?? 9000);
+    state.mechanismGraph = activeRevision.mechanism_graph_config || null;
+    state.mechanismDrivers = Array.isArray(activeRevision.mechanism_drivers)
+      ? activeRevision.mechanism_drivers
+      : [];
+    state.steeringAssignments = Array.isArray(activeRevision.steering_assignments)
+      ? activeRevision.steering_assignments
+      : [];
+    state.combinationActive = true;
+    state.displayMode = "simulation";
+    localStorage.setItem("easytowing_display_mode", state.displayMode);
+    renderMechanismGraphConfiguration();
+    updateExportLinks();
+    await calculateCombinationStudy(Number(activeRevision.beta_deg));
+    renderSweepValidation(activeRevision.snapshot?.sweep_validation || null);
+    renderReleaseChecklist();
+    return;
+  }
+
+  state.combinationActive = false;
+  state.mechanismGraph = null;
+  state.mechanismDrivers = [];
+  state.steeringAssignments = [];
+  renderCombinationConfig();
+  renderMechanismGraphConfiguration("Build the graph after defining the active vehicle combination.");
+  renderSweepValidation(null);
   if (activeRevision.accepted_optimization) {
     state.displayMode = "optimized";
     localStorage.setItem("easytowing_display_mode", state.displayMode);
@@ -2352,16 +5784,18 @@ async function renderProjectFromDetail(project) {
   }
   updateExportLinks();
   await loadState(Number(activeRevision.beta_deg));
-  await loadOptimization(activeRevision.optimization_mode || "quick");
+  renderReleaseChecklist();
 }
 
 async function refreshProjectPanel() {
   const listPayload = await loadProjectList();
   const preferredProjectId = localStorage.getItem("easytowing_project_id");
-  let projectId = preferredProjectId;
-  if (!projectId) {
-    projectId = listPayload.active_project_id || listPayload.projects?.[0]?.id || null;
-  }
+  const projects = Array.isArray(listPayload.projects) ? listPayload.projects : [];
+  const preferredProjectBelongsToWorkspace = projects.some((project) => project.id === preferredProjectId);
+  const projectId = preferredProjectBelongsToWorkspace
+    ? preferredProjectId
+    : (listPayload.active_project_id || projects[0]?.id || null);
+  renderProjectSelector(projects, projectId);
   if (!projectId) {
     return;
   }
@@ -2372,9 +5806,7 @@ async function refreshProjectPanel() {
 async function createProject() {
   const response = await fetch("/api/projects", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders(),
     body: JSON.stringify({
       name: projectNameInput.value || "Reference Demo Project",
       beta_deg: Number(betaSlider.value),
@@ -2386,9 +5818,13 @@ async function createProject() {
       design_cases: serializedDesignCases(),
       linkage_config: state.linkageConfig ? serializedLinkageConfig() : null,
       vehicle_config: state.vehicleConfig,
+      ...projectCombinationPayload(),
       note: projectNoteInput.value || "Initial revision",
     }),
   });
+  if (!response.ok) {
+    throw new Error(await response.text() || `HTTP ${response.status}`);
+  }
   const payload = await response.json();
   await renderProjectFromDetail(payload.project);
 }
@@ -2400,9 +5836,7 @@ async function saveProjectRevision() {
   }
   const response = await fetch(`/api/projects/${encodeURIComponent(state.currentProjectId)}/revisions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders(),
     body: JSON.stringify({
       beta_deg: Number(betaSlider.value),
       beta_min_deg: state.betaRange.minDeg,
@@ -2414,16 +5848,20 @@ async function saveProjectRevision() {
       design_cases: serializedDesignCases(),
       linkage_config: state.linkageConfig ? serializedLinkageConfig() : null,
       vehicle_config: state.vehicleConfig,
+      ...projectCombinationPayload(),
       note: projectNoteInput.value || "Revision",
     }),
   });
+  if (!response.ok) {
+    throw new Error(await response.text() || `HTTP ${response.status}`);
+  }
   const payload = await response.json();
   await renderProjectFromDetail(payload.project);
 }
 
 function setOptimizationProposalState(enabled) {
   optimizeCompareButton.disabled = !enabled;
-  optimizeApplyButton.disabled = !enabled || !state.currentProjectId;
+  optimizeApplyButton.disabled = !enabled || !state.currentProjectId || !hasPermission("project:write");
   optimizeRejectButton.disabled = !enabled;
 }
 
@@ -2443,9 +5881,20 @@ async function applyOptimizedDesign() {
   }
   optimizeApplyButton.disabled = true;
   try {
-    const appliedLinkageConfig = state.linkageConfig
-      ? serializedLinkageConfig(optimizedLinkageConfig())
+    if (state.optimizationPayload.optimized?.feasible !== true) {
+      throw new Error("Only a hard-feasible optimization proposal can be applied.");
+    }
+    const graphOptimization = state.combinationActive && state.mechanismGraph;
+    const optimizedDrivers = graphOptimization
+      ? state.optimizationPayload.mechanism_drivers_after
       : null;
+    const optimizedAssignments = graphOptimization
+      ? state.optimizationPayload.steering_assignments_after
+      : null;
+    if (graphOptimization && (!Array.isArray(optimizedDrivers) || !Array.isArray(optimizedAssignments))) {
+      throw new Error("The graph optimization result has no traceable driver or wheel mapping.");
+    }
+    const appliedLinkageConfig = serializedLinkageConfig(optimizedLinkageConfig());
     const response = await fetch(`/api/projects/${encodeURIComponent(state.currentProjectId)}/optimization`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2455,12 +5904,27 @@ async function applyOptimizedDesign() {
         beta_min_deg: state.betaRange.minDeg,
         beta_max_deg: state.betaRange.maxDeg,
         optimization_mode: optimizeMode.value,
+        clearance_target_mm: state.optimizationSettings.clearanceTargetMm,
+        steering_error_weight: state.optimizationSettings.steeringErrorWeight,
+        synchronization_error_weight: state.optimizationSettings.synchronizationErrorWeight,
+        clearance_weight: state.optimizationSettings.clearanceWeight,
+        clearance_violation_weight: state.optimizationSettings.clearanceViolationWeight,
+        failure_weight: state.optimizationSettings.failureWeight,
+        preferred_weight: state.optimizationSettings.preferredWeight,
+        complexity_weight: state.optimizationSettings.complexityWeight,
         wheelbase_mm: state.geometry.wheelbaseMm,
         track_mm: state.geometry.trackMm,
         enabled_ids: state.optimizationEnabledIds === null ? [] : [...state.optimizationEnabledIds],
         design_cases: serializedDesignCases(),
-        linkage_config: appliedLinkageConfig,
+        linkage_config: graphOptimization ? null : appliedLinkageConfig,
         vehicle_config: state.vehicleConfig,
+        ...(graphOptimization
+          ? {
+            ...projectCombinationPayload(),
+            mechanism_drivers: optimizedDrivers,
+            steering_assignments: optimizedAssignments,
+          }
+          : {}),
         note: projectNoteInput.value || "Applied optimized design",
       }),
     });
@@ -2471,7 +5935,7 @@ async function applyOptimizedDesign() {
     geometryStatus.textContent = "Optimized design applied as a new revision.";
     await renderProjectFromDetail(payload.project);
   } finally {
-    setOptimizationProposalState(Boolean(state.optimizationPayload));
+    setOptimizationProposalState(state.optimizationPayload?.optimized?.feasible === true);
   }
 }
 
@@ -2481,23 +5945,82 @@ function rejectOptimization() {
   setOptimizationProposalState(false);
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function runBackgroundOptimization(requestBody, requestId) {
+  const response = await fetch("/api/jobs/optimization", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      ...requestBody,
+      project_id: state.currentProjectId || undefined,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text() || `HTTP ${response.status}`);
+  }
+  let job = await response.json();
+  optimizeFeasibilityReasons.textContent = `Full optimization queued (${job.id}).`;
+  optimizeRunStats.textContent = `QUEUED / ${job.progress ?? 0}%`;
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    if (requestId !== state.optimizationRequest) {
+      return null;
+    }
+    if (["queued", "running"].includes(job.status)) {
+      if (attempt > 0) {
+        optimizeFeasibilityReasons.textContent = `Full optimization ${job.status} (${job.progress ?? 0}%).`;
+        optimizeRunStats.textContent = `${String(job.status).toUpperCase()} / ${job.progress ?? 0}%`;
+      }
+      await wait(250);
+      const jobResponse = await fetch(`/api/jobs/${encodeURIComponent(job.id)}`, {
+        headers: authHeaders(),
+      });
+      if (!jobResponse.ok) {
+        throw new Error(await jobResponse.text() || `HTTP ${jobResponse.status}`);
+      }
+      job = await jobResponse.json();
+      continue;
+    }
+    if (job.status === "succeeded") {
+      return job.result;
+    }
+    throw new Error(job.error || `Optimization job ended with status ${job.status}.`);
+  }
+  throw new Error("Optimization job polling timed out after 150 seconds.");
+}
+
 async function restoreProjectRevision(revisionId) {
   if (!state.currentProjectId) {
     return;
   }
   const response = await fetch(`/api/projects/${encodeURIComponent(state.currentProjectId)}/restore`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders(),
     body: JSON.stringify({ revision_id: revisionId }),
   });
   const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.message || `HTTP ` + response.status);
+  }
   await renderProjectFromDetail(payload.project);
 }
 
 async function loadOptimization(mode) {
+  if (state.combinationActive && !state.mechanismGraph) {
+    optimizeFeasibilityCard.dataset.status = "fail";
+    optimizeFeasibilityStatus.textContent = "BLOCKED";
+    optimizeFeasibilityReasons.textContent = "Build and solve the mechanism graph before running graph-native optimization.";
+    setOptimizationProposalState(false);
+    return;
+  }
   const requestId = ++state.optimizationRequest;
+  state.optimizationPayload = null;
+  setOptimizationProposalState(false);
+  optimizeFeasibilityCard.dataset.status = "pending";
+  optimizeFeasibilityStatus.textContent = "CHECKING";
+  optimizeFeasibilityReasons.textContent = "Evaluating mechanism solvability, collisions, and minimum clearance.";
   optimizeButton.disabled = true;
   optimizeButton.textContent = "Running...";
   try {
@@ -2520,40 +6043,58 @@ async function loadOptimization(mode) {
       design_cases: serializedDesignCases(),
       linkage: state.linkageConfig ? serializedLinkageConfig() : null,
       vehicle_config: state.vehicleConfig,
+      ...(state.combinationActive ? projectCombinationPayload() : {}),
     };
-    const response = state.linkageConfig || state.vehicleConfig
-      ? await fetch("/api/calculate/optimization", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(optimizationBody),
-      })
-      : await fetch(`/api/optimize?mode=${encodeURIComponent(mode)}${enabledIds === null ? "" : `&enabled=${encodeURIComponent(enabledIds.join(","))}`}`
-        + `&clearance_target_mm=${encodeURIComponent(state.optimizationSettings.clearanceTargetMm)}`
-        + `&steering_error_weight=${encodeURIComponent(state.optimizationSettings.steeringErrorWeight)}`
-        + `&synchronization_error_weight=${encodeURIComponent(state.optimizationSettings.synchronizationErrorWeight)}`
-        + `&clearance_weight=${encodeURIComponent(state.optimizationSettings.clearanceWeight)}`
-        + `&clearance_violation_weight=${encodeURIComponent(state.optimizationSettings.clearanceViolationWeight)}`
-        + `&failure_weight=${encodeURIComponent(state.optimizationSettings.failureWeight)}`
-        + `&preferred_weight=${encodeURIComponent(state.optimizationSettings.preferredWeight)}`
-        + `&complexity_weight=${encodeURIComponent(state.optimizationSettings.complexityWeight)}`
-        + (state.designCases.length === 0 ? "" : `&cases=${encodeURIComponent(JSON.stringify(serializedDesignCases()))}`));
-    if (!response.ok) {
-      throw new Error(await response.text() || `HTTP ${response.status}`);
+    let payload;
+    if (mode === "full") {
+      payload = await runBackgroundOptimization(optimizationBody, requestId);
+      if (payload === null) {
+        return;
+      }
+    } else {
+      const response = state.combinationActive || state.linkageConfig || state.vehicleConfig
+        ? await fetch("/api/calculate/optimization", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(optimizationBody),
+        })
+        : await fetch(`/api/optimize?mode=${encodeURIComponent(mode)}${enabledIds === null ? "" : `&enabled=${encodeURIComponent(enabledIds.join(","))}`}`
+          + `&clearance_target_mm=${encodeURIComponent(state.optimizationSettings.clearanceTargetMm)}`
+          + `&steering_error_weight=${encodeURIComponent(state.optimizationSettings.steeringErrorWeight)}`
+          + `&synchronization_error_weight=${encodeURIComponent(state.optimizationSettings.synchronizationErrorWeight)}`
+          + `&clearance_weight=${encodeURIComponent(state.optimizationSettings.clearanceWeight)}`
+          + `&clearance_violation_weight=${encodeURIComponent(state.optimizationSettings.clearanceViolationWeight)}`
+          + `&failure_weight=${encodeURIComponent(state.optimizationSettings.failureWeight)}`
+          + `&preferred_weight=${encodeURIComponent(state.optimizationSettings.preferredWeight)}`
+          + `&complexity_weight=${encodeURIComponent(state.optimizationSettings.complexityWeight)}`
+          + (state.designCases.length === 0 ? "" : `&cases=${encodeURIComponent(JSON.stringify(serializedDesignCases()))}`));
+      if (!response.ok) {
+        throw new Error(await response.text() || `HTTP ${response.status}`);
+      }
+      payload = await response.json();
     }
-    const payload = await response.json();
     if (requestId !== state.optimizationRequest) {
       return;
     }
     updateOptimizationSummary(payload);
+  } catch (error) {
+    if (requestId === state.optimizationRequest) {
+      optimizeFeasibilityCard.dataset.status = "fail";
+      optimizeFeasibilityStatus.textContent = "FAIL";
+      optimizeFeasibilityReasons.textContent = error.message;
+    }
+    throw error;
   } finally {
     if (requestId === state.optimizationRequest) {
-      optimizeButton.disabled = false;
+      optimizeButton.disabled = state.combinationActive && !state.mechanismGraph;
       optimizeButton.textContent = "Run";
     }
   }
 }
 
 async function loadState(betaDeg) {
+  state.combinationActive = false;
+  optimizeButton.disabled = false;
   const requestId = ++state.activeRequest;
   const response = state.linkageConfig || state.vehicleConfig
     ? await fetch("/api/calculate/kinematic", {
@@ -2581,6 +6122,9 @@ async function loadState(betaDeg) {
 }
 
 async function applyLinkageConfiguration() {
+  if (state.combinationActive) {
+    throw new Error("This is a multi-body graph study. Edit the mechanism graph instead of the legacy linkage panel.");
+  }
   const previous = state.linkageConfig;
   let next;
   try {
@@ -2590,10 +6134,15 @@ async function applyLinkageConfiguration() {
     return;
   }
   state.linkageConfig = next;
+  markWorkspaceDirty("Linkage configuration applied. Save a new revision before review.");
   linkageApplyButton.disabled = true;
   linkageConfigStatus.textContent = "Solving custom linkage...";
   try {
-    await loadState(Number(betaSlider.value));
+    if (state.combinationActive) {
+      await calculateCombinationStudy(Number(betaSlider.value));
+    } else {
+      await loadState(Number(betaSlider.value));
+    }
     linkageConfigStatus.textContent = "Custom linkage active. Slider results use the applied component dimensions.";
   } catch (error) {
     state.linkageConfig = previous;
@@ -2605,11 +6154,19 @@ async function applyLinkageConfiguration() {
 }
 
 async function resetLinkageConfiguration() {
+  if (state.combinationActive) {
+    throw new Error("This is a multi-body graph study. Edit the mechanism graph instead of the legacy linkage panel.");
+  }
   const previous = state.linkageConfig;
   state.linkageConfig = null;
+  markWorkspaceDirty("Linkage configuration reset. Save a new revision before review.");
   renderLinkageConfig();
   try {
-    await loadState(Number(betaSlider.value));
+    if (state.combinationActive) {
+      await calculateCombinationStudy(Number(betaSlider.value));
+    } else {
+      await loadState(Number(betaSlider.value));
+    }
   } catch (error) {
     state.linkageConfig = previous;
     renderLinkageConfig();
@@ -2618,7 +6175,14 @@ async function resetLinkageConfiguration() {
 }
 
 betaSlider.addEventListener("input", (event) => {
-  void loadState(Number(event.target.value)).catch((error) => {
+  markWorkspaceDirty("Selected maneuver changed. Save a new revision before review.");
+  if (state.combinationActive) {
+    renderSweepValidation(null);
+  }
+  const calculation = state.combinationActive
+    ? calculateCombinationStudy(Number(event.target.value))
+    : loadState(Number(event.target.value));
+  void calculation.catch((error) => {
     geometryStatus.textContent = `Simulation failed: ${error.message}`;
   });
 });
@@ -2646,6 +6210,7 @@ geometryApplyButton.addEventListener("click", () => {
     geometryStatus.textContent = "Articulation slider bounds cannot exceed the vehicle maximum articulation.";
     return;
   }
+  markWorkspaceDirty("Vehicle geometry changed. Recalculate and save a new revision before review.");
   state.geometry = {
     ...state.geometry,
     wheelbaseMm,
@@ -2665,7 +6230,10 @@ geometryApplyButton.addEventListener("click", () => {
   });
 });
 
-customAxleCountInput.addEventListener("input", renderCustomAxleConfig);
+customAxleCountInput.addEventListener("input", () => {
+  markWorkspaceDirty("Axle count changed. Recalculate and save a new revision before review.");
+  renderCustomAxleConfig();
+});
 
 curveStepInput.addEventListener("change", () => {
   const value = Number(curveStepInput.value);
@@ -2674,23 +6242,167 @@ curveStepInput.addEventListener("change", () => {
     return;
   }
   curveStepInput.setCustomValidity("");
+  markWorkspaceDirty("Preview sampling step changed. Save a new revision before review.");
   refreshSteeringCurvesPreview();
   refreshSweptPathPreview();
 });
 
 designCaseAddButton.addEventListener("click", () => {
+  markWorkspaceDirty("Design case added. Save a new revision before review.");
   state.designCases.push(defaultDesignCase(state.designCases.length));
   renderDesignCases();
 });
 
 customAxleApplyButton.addEventListener("click", () => {
+  markWorkspaceDirty("Axle study inputs changed. Save a new revision before review.");
   void calculateCustomAxleStudy().catch((error) => {
     customAxleStatus.textContent = `Ideal axle study failed: ${error.message}`;
     customAxleApplyButton.disabled = false;
   });
 });
 
-linkageCompanionEnabled.addEventListener("change", renderLinkageConfig);
+linkageCompanionEnabled.addEventListener("change", () => {
+  markWorkspaceDirty("Linkage configuration changed. Apply the linkage and save a new revision before review.");
+  renderLinkageConfig();
+});
+
+for (const workflowStep of workflowSteps) {
+  workflowStep.addEventListener("click", () => {
+    setWorkflowStep(workflowStep.dataset.workflowStep);
+  });
+}
+
+workflowNextButton.addEventListener("click", () => {
+  if (isLegacyRevisionMode()) {
+    combinationActivateButton.click();
+    return;
+  }
+  setWorkflowStep(workflowNextButton.dataset.workflowTarget || "project");
+});
+
+projectStartButton.addEventListener("click", () => {
+  if (!state.currentProjectId) {
+    if (projectCreateButton.disabled) {
+      workspaceAccessCard.open = true;
+      authStatus.textContent = "Sign in with project-write permission before creating a project.";
+      authEmailInput?.focus();
+      return;
+    }
+    projectCreateButton.click();
+    return;
+  }
+  if (isLegacyRevisionMode()) {
+    combinationActivateButton.click();
+    return;
+  }
+  setWorkflowStep(nextWorkflowAction().step);
+});
+
+combinationBodyCountInput.addEventListener("change", () => {
+  markWorkspaceDirty("Body count changed. Rebuild the mechanism and save a new revision before review.", {
+    invalidateMechanism: true,
+  });
+  resizeCombinationBodies(Number(combinationBodyCountInput.value));
+});
+
+combinationActivateButton.addEventListener("click", () => {
+  state.combinationActive = true;
+  state.vehicleConfig = null;
+  state.mechanismGraph = null;
+  state.mechanismDrivers = [];
+  state.steeringAssignments = [];
+  state.mechanismGraphEditorDraft = null;
+  resetEngineeringEvidence("Multi-body workflow activated. Define and solve the combination before validation.");
+  markWorkspaceDirty("Multi-body workflow activated. Define and solve the combination, then save a new revision.");
+  renderCombinationConfig();
+  renderMechanismGraphConfiguration("Define the active vehicle combination, then build the mechanism graph.");
+  setWorkflowStep("vehicle");
+});
+
+combinationTurnRadiusInput.addEventListener("input", () => {
+  markWorkspaceDirty("Maneuver radius changed. Recalculate and save a new revision before review.");
+});
+
+sweepValidationStepInput.addEventListener("change", () => {
+  markWorkspaceDirty("Full-range sample step changed. Save a new revision before review.");
+});
+
+combinationCalculateButton.addEventListener("click", () => {
+  markWorkspaceDirty("Maneuver pose changed. Save a new revision before review.");
+  void calculateCombinationStudy().catch((error) => {
+    combinationStatus.textContent = `Combination failed: ${error.message}`;
+  });
+});
+
+mechanismGraphBuildButton.addEventListener("click", () => {
+  try {
+    buildMechanismGraphFromCombination();
+  } catch (error) {
+    mechanismGraphStatus.textContent = `Graph build failed: ${error.message}`;
+  }
+});
+
+mechanismGraphApplyButton.addEventListener("click", () => {
+  applyMechanismGraphEdits();
+});
+
+mechanismGraphAddPointButton.addEventListener("click", () => {
+  addMechanismGraphEditorItem("points");
+});
+
+mechanismGraphAddMemberButton.addEventListener("click", () => {
+  addMechanismGraphEditorItem("members");
+});
+
+mechanismGraphAddOutputButton.addEventListener("click", () => {
+  addMechanismGraphEditorItem("outputs");
+});
+
+mechanismGraphAddDriverButton.addEventListener("click", () => {
+  addMechanismGraphEditorItem("drivers");
+});
+
+mechanismGraphAddAssignmentButton.addEventListener("click", () => {
+  addMechanismGraphEditorItem("assignments");
+});
+
+mechanismGraphSolveButton.addEventListener("click", () => {
+  mechanismGraphSolveButton.disabled = true;
+  void solveMechanismGraphDesign()
+    .catch((error) => {
+      mechanismGraphStatus.textContent = `Graph solve failed: ${error.message}`;
+    })
+    .finally(() => {
+      mechanismGraphSolveButton.disabled = state.mechanismGraph === null;
+    });
+});
+
+sweepValidationButton.addEventListener("click", () => {
+  void runCombinationSweepValidation().catch((error) => {
+    sweepValidationStatus.textContent = `Full-range validation failed: ${error.message}`;
+    sweepValidationButton.disabled = !state.combinationActive || !state.mechanismGraph;
+  });
+});
+
+acceptanceEvaluateButton.addEventListener("click", () => {
+  void evaluateMonrocAcceptance().catch((error) => {
+    acceptanceStatusNote.dataset.status = "fail";
+    acceptanceStatusNote.textContent = `Acceptance evaluation failed: ${error.message}`;
+    renderMonrocAcceptance(state.acceptanceResult);
+  });
+});
+
+for (const acceptanceInput of [
+  acceptanceCaseIdInput,
+  acceptanceMinClearanceInput,
+  acceptanceMaxWheelErrorInput,
+  acceptanceMaxSyncErrorInput,
+  acceptanceMaxResidualInput,
+  acceptanceRequireFullRangeInput,
+]) {
+  acceptanceInput.addEventListener("input", markAcceptanceCriteriaDirty);
+  acceptanceInput.addEventListener("change", markAcceptanceCriteriaDirty);
+}
 
 linkageApplyButton.addEventListener("click", () => {
   void applyLinkageConfiguration();
@@ -2750,7 +6462,7 @@ optimizeCompareButton.addEventListener("click", () => {
 optimizeApplyButton.addEventListener("click", () => {
   void applyOptimizedDesign().catch((error) => {
     geometryStatus.textContent = `Apply failed: ${error.message}`;
-    setOptimizationProposalState(Boolean(state.optimizationPayload));
+    setOptimizationProposalState(state.optimizationPayload?.optimized?.feasible === true);
   });
 });
 
@@ -2772,19 +6484,95 @@ viewModeSelect.addEventListener("change", () => {
 });
 
 projectCreateButton.addEventListener("click", () => {
-  createProject();
+  void createProject().catch((error) => {
+    geometryStatus.textContent = `Project creation failed: ${error.message}`;
+  });
+});
+
+projectSelector.addEventListener("change", () => {
+  const projectId = projectSelector.value;
+  if (!projectId) {
+    return;
+  }
+  projectSelector.disabled = true;
+  void loadProjectDetail(projectId)
+    .then((project) => renderProjectFromDetail(project))
+    .catch((error) => {
+      geometryStatus.textContent = `Project load failed: ${error.message}`;
+    })
+    .finally(() => {
+      projectSelector.disabled = false;
+    });
 });
 
 projectSaveButton.addEventListener("click", () => {
-  saveProjectRevision();
+  void saveProjectRevision().catch((error) => {
+    geometryStatus.textContent = `Revision save failed: ${error.message}`;
+  });
+});
+
+reviewSubmitButton.addEventListener("click", () => {
+  void submitRevisionForReview().catch((error) => {
+    reviewStatusNote.textContent = `Review submission failed: ${error.message}`;
+    renderReviewControls();
+  });
+});
+
+reviewerAssignButton.addEventListener("click", () => {
+  void assignReviewer().catch((error) => {
+    reviewerAssignmentStatus.textContent = `Reviewer assignment failed: ${error.message}`;
+    renderReviewControls();
+  });
+});
+
+reviewApproveButton.addEventListener("click", () => {
+  void decideRevision(true).catch((error) => {
+    reviewStatusNote.textContent = `Approval failed: ${error.message}`;
+    renderReviewControls();
+  });
+});
+
+reviewRejectButton.addEventListener("click", () => {
+  void decideRevision(false).catch((error) => {
+    reviewStatusNote.textContent = `Rejection failed: ${error.message}`;
+    renderReviewControls();
+  });
+});
+
+authForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void signIn().catch((error) => {
+    authStatus.textContent = `Sign-in failed: ${error.message}`;
+    renderAuthStatus();
+  });
+});
+
+authLogoutButton.addEventListener("click", () => {
+  void signOut().catch((error) => {
+    authStatus.textContent = `Sign-out failed: ${error.message}`;
+  });
 });
 
 dxfImportButton.addEventListener("click", () => {
   importSelectedDxfFile();
 });
 
+dxfSourceUnits.addEventListener("change", () => {
+  renderDxfMetadata(state.dxfImportPayload || {});
+  updateDxfApplyButtonState(Boolean(state.dxfImportText));
+});
+
+dxfCoordinateSystem.addEventListener("change", () => {
+  renderDxfMetadata(state.dxfImportPayload || {});
+  updateDxfApplyButtonState(Boolean(state.dxfImportText));
+});
+
 dxfApplyButton.addEventListener("click", () => {
   applyDxfAssignments();
+});
+
+dxfRetainSourceButton.addEventListener("click", () => {
+  void retainDxfSource();
 });
 
 interactiveEditToggle.addEventListener("click", () => {
@@ -2856,6 +6644,7 @@ diagram.addEventListener("pointerup", (event) => {
   }
   interactiveEditStatus.textContent = `Applying ${axleId} position...`;
   try {
+    markWorkspaceDirty("Axle layout changed. Save a new revision before review.");
     state.vehicleConfig = serializedVehicleConfig();
     renderCustomAxleConfig();
     void calculateCustomAxleStudy()
@@ -2881,19 +6670,27 @@ async function initializeApp() {
     ? state.displayMode
     : "simulation";
   syncDisplayModeUi();
+  initializeWorkflowPanels();
+  setWorkflowStep(state.activeWorkflowStep);
   setBetaRange(state.betaRange.minDeg, state.betaRange.maxDeg);
   updateExportLinks();
   dxfApplyButton.disabled = true;
   dxfImportButton.textContent = "Import";
   syncGeometryMetadataInputs();
   renderCustomAxleConfig();
+  renderCombinationConfig();
   renderLinkageConfig();
   renderDesignCases();
-  refreshSteeringCurvesPreview();
-  refreshSweptPathPreview();
   renderDxfEntities({ entities: [], role_options: getDxfRoleOptions() });
   dxfImportStatus.textContent = "Choose a DXF file to parse supported entities and rebuild a rough layout preview.";
+  await loadSaaSStatus();
+  if (state.authRequired && !state.authPrincipal) {
+    return;
+  }
   await refreshProjectPanel();
+  if (state.combinationActive) {
+    return;
+  }
   void loadState(Number(betaSlider.value)).catch((error) => {
     geometryStatus.textContent = `Simulation failed: ${error.message}`;
   });

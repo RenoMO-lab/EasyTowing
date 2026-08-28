@@ -89,6 +89,37 @@ class AckermannGeometryTests(unittest.TestCase):
         for angle in solution.wheel_angles_rad.values():
             self.assertTrue(math.isclose(angle, 0.0, abs_tol=1e-12))
 
+    def test_multi_wheel_axle_solves_and_reports_every_wheel(self) -> None:
+        vehicle = VehicleLayout(
+            id="dual_wheel_vehicle",
+            name="Dual wheel steering test",
+            axles=(
+                Axle(
+                    id="front_axle",
+                    center=Point2D(4360.0, 0.0),
+                    track_mm=2800.0,
+                    wheel_count=4,
+                    wheel_lateral_offsets_mm=(1400.0, 1180.0, -1180.0, -1400.0),
+                ),
+            ),
+            body_length_mm=5600.0,
+            body_width_mm=3400.0,
+        )
+
+        solution = solve_ideal_steering_from_radius(vehicle, 14000.0)
+
+        self.assertEqual(len(solution.axles[0].wheel_solutions), 4)
+        self.assertEqual(set(solution.wheel_angles_rad), {
+            "front_axle_left_1",
+            "front_axle_left_2",
+            "front_axle_right_1",
+            "front_axle_right_2",
+        })
+        self.assertNotEqual(
+            solution.wheel_angles_rad["front_axle_left_1"],
+            solution.wheel_angles_rad["front_axle_left_2"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

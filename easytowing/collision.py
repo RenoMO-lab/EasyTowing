@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import math
 from typing import Iterable, Sequence
 
+from .errors import InvalidGeometryError
 from .geometry import EPSILON_MM, Point2D
 
 
@@ -12,6 +13,10 @@ class CircleEnvelope:
     center: Point2D
     radius_mm: float
 
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.radius_mm) or self.radius_mm < 0.0:
+            raise InvalidGeometryError("Circle envelope radius must be finite and non-negative.")
+
 
 @dataclass(frozen=True, slots=True)
 class CapsuleEnvelope:
@@ -19,10 +24,83 @@ class CapsuleEnvelope:
     end: Point2D
     radius_mm: float
 
+    def __post_init__(self) -> None:
+        if (self.end - self.start).length() <= EPSILON_MM:
+            raise InvalidGeometryError("Capsule envelope endpoints must be distinct.")
+        if not math.isfinite(self.radius_mm) or self.radius_mm < 0.0:
+            raise InvalidGeometryError("Capsule envelope radius must be finite and non-negative.")
+
 
 @dataclass(frozen=True, slots=True)
 class PolygonEnvelope:
     points: tuple[Point2D, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.points) < 3:
+            raise InvalidGeometryError("Polygon envelope requires at least three points.")
+        if any(
+            (self.points[index] - self.points[(index + 1) % len(self.points)]).length()
+            <= EPSILON_MM
+            for index in range(len(self.points))
+        ):
+            raise InvalidGeometryError("Polygon envelope contains a zero-length edge.")
+        if len(set(self.points)) != len(self.points):
+            raise InvalidGeometryError("Polygon envelope contains duplicate vertices.")
+        twice_area = sum(
+            point.x_mm * self.points[(index + 1) % len(self.points)].y_mm
+            - self.points[(index + 1) % len(self.points)].x_mm * point.y_mm
+            for index, point in enumerate(self.points)
+        )
+        if abs(twice_area) <= EPSILON_MM:
+            raise InvalidGeometryError("Polygon envelope must enclose a non-zero area.")
+
+        def cross(start: Point2D, end: Point2D, point: Point2D) -> float:
+            edge = end - start
+            offset = point - start
+            return edge.x_mm * offset.y_mm - edge.y_mm * offset.x_mm
+
+        def on_segment(point: Point2D, start: Point2D, end: Point2D) -> bool:
+            return (
+                abs(cross(start, end, point)) <= EPSILON_MM
+                and min(start.x_mm, end.x_mm) - EPSILON_MM <= point.x_mm <= max(start.x_mm, end.x_mm) + EPSILON_MM
+                and min(start.y_mm, end.y_mm) - EPSILON_MM <= point.y_mm <= max(start.y_mm, end.y_mm) + EPSILON_MM
+            )
+
+        def intersects(
+            start_a: Point2D,
+            end_a: Point2D,
+            start_b: Point2D,
+            end_b: Point2D,
+        ) -> bool:
+            first = cross(start_a, end_a, start_b)
+            second = cross(start_a, end_a, end_b)
+            third = cross(start_b, end_b, start_a)
+            fourth = cross(start_b, end_b, end_a)
+            if (
+                ((first > EPSILON_MM and second < -EPSILON_MM)
+                 or (first < -EPSILON_MM and second > EPSILON_MM))
+                and ((third > EPSILON_MM and fourth < -EPSILON_MM)
+                     or (third < -EPSILON_MM and fourth > EPSILON_MM))
+            ):
+                return True
+            return (
+                (abs(first) <= EPSILON_MM and on_segment(start_b, start_a, end_a))
+                or (abs(second) <= EPSILON_MM and on_segment(end_b, start_a, end_a))
+                or (abs(third) <= EPSILON_MM and on_segment(start_a, start_b, end_b))
+                or (abs(fourth) <= EPSILON_MM and on_segment(end_a, start_b, end_b))
+            )
+
+        edge_count = len(self.points)
+        for left_index in range(edge_count):
+            left_start = self.points[left_index]
+            left_end = self.points[(left_index + 1) % edge_count]
+            for right_index in range(left_index + 1, edge_count):
+                if right_index == left_index + 1 or (left_index == 0 and right_index == edge_count - 1):
+                    continue
+                right_start = self.points[right_index]
+                right_end = self.points[(right_index + 1) % edge_count]
+                if intersects(left_start, left_end, right_start, right_end):
+                    raise InvalidGeometryError("Polygon envelope self-intersects.")
 
 
 Envelope = CircleEnvelope | CapsuleEnvelope | PolygonEnvelope
@@ -34,6 +112,27 @@ class CollisionItem:
     envelope: Envelope
     margin_mm: float = 0.0
     excluded_pair_ids: tuple[str, ...] = ()
+    mounted_body_id: str | None = None
+    connectivity_points: tuple[Point2D, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.id.strip():
+            raise InvalidGeometryError("Collision item IDs must not be empty.")
+        if not math.isfinite(self.margin_mm) or self.margin_mm < 0.0:
+            raise InvalidGeometryError(
+                f"Collision item {self.id!r} margin must be finite and non-negative."
+            )
+        if self.mounted_body_id is not None and not self.mounted_body_id.strip():
+            raise InvalidGeometryError(
+                f"Collision item {self.id!r} has an empty mounted body ID."
+            )
+        if any(
+            not math.isfinite(point.x_mm) or not math.isfinite(point.y_mm)
+            for point in self.connectivity_points
+        ):
+            raise InvalidGeometryError(
+                f"Collision item {self.id!r} has non-finite connectivity points."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +167,13 @@ class ClearanceReport:
 
 
 def axis_aligned_rectangle(center: Point2D, width_mm: float, height_mm: float) -> PolygonEnvelope:
+    if (
+        not math.isfinite(width_mm)
+        or not math.isfinite(height_mm)
+        or width_mm <= 0.0
+        or height_mm <= 0.0
+    ):
+        raise InvalidGeometryError("Rectangle width and height must be positive and finite.")
     half_width = width_mm / 2.0
     half_height = height_mm / 2.0
     return PolygonEnvelope(
@@ -146,6 +252,88 @@ def _distance_segment_segment(start_a: Point2D, end_a: Point2D, start_b: Point2D
         _distance_point_segment(start_b, start_a, end_a),
         _distance_point_segment(end_b, start_a, end_a),
     )
+
+
+def _segment_intersection_points(
+    start_a: Point2D,
+    end_a: Point2D,
+    start_b: Point2D,
+    end_b: Point2D,
+) -> tuple[Point2D, ...]:
+    """Return distinct centerline intersections, including collinear overlap ends."""
+
+    vector_a = end_a - start_a
+    vector_b = end_b - start_b
+    offset = start_b - start_a
+    determinant = _cross(vector_a, vector_b)
+    tolerance = 1e-8
+
+    def unique(points: Iterable[Point2D]) -> tuple[Point2D, ...]:
+        result: list[Point2D] = []
+        for point in points:
+            if not any((point - existing).length() <= tolerance for existing in result):
+                result.append(point)
+        return tuple(result)
+
+    if abs(determinant) <= tolerance:
+        if abs(_cross(offset, vector_a)) > tolerance:
+            return ()
+        candidates = (
+            point
+            for point in (start_a, end_a, start_b, end_b)
+            if _point_on_segment(point, start_a, end_a)
+            and _point_on_segment(point, start_b, end_b)
+        )
+        return unique(candidates)
+
+    first = _cross(offset, vector_b) / determinant
+    second = _cross(offset, vector_a) / determinant
+    if -tolerance <= first <= 1.0 + tolerance and -tolerance <= second <= 1.0 + tolerance:
+        return (start_a + vector_a.scale(first),)
+    return ()
+
+
+def _same_connectivity_point(left: Point2D, right: Point2D) -> bool:
+    return (left - right).length() <= 1e-6
+
+
+def _connected_contact_is_local(item_a: CollisionItem, item_b: CollisionItem) -> bool:
+    """Permit a connected pair only when its sole centerline contact is a joint."""
+
+    if not item_a.connectivity_points or not item_b.connectivity_points:
+        # Existing exclusions without point topology (for example a tire and its
+        # axle beam or a component mounted inside its own body) remain explicit
+        # whole-pair exclusions.
+        return True
+
+    common_points = tuple(
+        left
+        for left in item_a.connectivity_points
+        if any(_same_connectivity_point(left, right) for right in item_b.connectivity_points)
+    )
+    if not common_points:
+        return False
+
+    left = item_a.envelope
+    right = item_b.envelope
+    if isinstance(left, CapsuleEnvelope) and isinstance(right, CapsuleEnvelope):
+        intersections = _segment_intersection_points(left.start, left.end, right.start, right.end)
+        return len(intersections) == 1 and any(
+            _same_connectivity_point(intersections[0], point) for point in common_points
+        )
+    if isinstance(left, CircleEnvelope) and isinstance(right, CapsuleEnvelope):
+        return any(
+            _same_connectivity_point(left.center, point) for point in common_points
+        ) and _point_on_segment(left.center, right.start, right.end)
+    if isinstance(left, CapsuleEnvelope) and isinstance(right, CircleEnvelope):
+        return any(
+            _same_connectivity_point(right.center, point) for point in common_points
+        ) and _point_on_segment(right.center, left.start, left.end)
+    if isinstance(left, CircleEnvelope) and isinstance(right, CircleEnvelope):
+        return any(
+            _same_connectivity_point(left.center, point) for point in common_points
+        ) and _same_connectivity_point(left.center, right.center)
+    return False
 
 
 def _polygon_edges(points: Sequence[Point2D]) -> Iterable[tuple[Point2D, Point2D]]:
@@ -302,12 +490,22 @@ def clearance_between_items(item_a: CollisionItem, item_b: CollisionItem) -> Cle
 
 def analyze_clearance(items: Iterable[CollisionItem]) -> ClearanceReport:
     item_tuple = tuple(items)
+    item_ids = [item.id for item in item_tuple]
+    if len(item_ids) != len(set(item_ids)):
+        raise InvalidGeometryError("Collision item IDs must be unique within a clearance report.")
+
+    def pair_is_excluded(item_a: CollisionItem, item_b: CollisionItem) -> bool:
+        excluded = (
+            item_b.id in item_a.excluded_pair_ids
+            or item_a.id in item_b.excluded_pair_ids
+        )
+        return excluded and _connected_contact_is_local(item_a, item_b)
+
     pair_results = tuple(
         clearance_between_items(item_tuple[left_index], item_tuple[right_index])
         for left_index in range(len(item_tuple))
         for right_index in range(left_index + 1, len(item_tuple))
-        if item_tuple[right_index].id not in item_tuple[left_index].excluded_pair_ids
-        and item_tuple[left_index].id not in item_tuple[right_index].excluded_pair_ids
+        if not pair_is_excluded(item_tuple[left_index], item_tuple[right_index])
     )
     minimum_pair = min(pair_results, key=lambda pair: pair.clearance_mm, default=None)
     return ClearanceReport(items=item_tuple, pairs=pair_results, minimum_pair=minimum_pair)

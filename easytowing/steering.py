@@ -40,6 +40,13 @@ class IdealAxleSolution:
     right_wheel: IdealWheelSolution
     reference_heading_rad: float = 0.0
     center_steering_angle_rad: float = 0.0
+    wheels: tuple[IdealWheelSolution, ...] = ()
+
+    @property
+    def wheel_solutions(self) -> tuple[IdealWheelSolution, ...]:
+        """Return every wheel, including legacy left/right compatibility fields."""
+
+        return self.wheels or (self.left_wheel, self.right_wheel)
 
     @property
     def center_heading_deg(self) -> float:
@@ -71,7 +78,7 @@ class IdealSteeringSolution:
         return {
             wheel.wheel_id: wheel.steering_angle_rad
             for axle in self.axles
-            for wheel in (axle.left_wheel, axle.right_wheel)
+            for wheel in axle.wheel_solutions
         }
 
     def wheel_steering_angles_deg(self) -> dict[str, float]:
@@ -131,34 +138,32 @@ def _solve_wheel_solution(
 
 
 def _solve_axle_solution(axle: Axle, icr: Point2D | None) -> IdealAxleSolution:
-    left_wheel, right_wheel = axle.wheels()
+    wheels = axle.wheels()
     is_fixed = not axle.steerable or axle.steering_mode == "FIXED"
     target_icr = None if is_fixed or axle.steering_mode == "USER_DEFINED" else icr
 
     if axle.steering_mode == "USER_DEFINED" and not is_fixed:
         user_heading = axle.heading_rad + axle.user_defined_steering_angle_rad
         user_angle_rad = axle.user_defined_steering_angle_rad
-        left_solution = IdealWheelSolution(
-            wheel_id=left_wheel.id,
-            axle_id=left_wheel.axle_id,
-            side=left_wheel.side,
-            center=left_wheel.center,
-            heading_rad=user_heading,
-            reference_heading_rad=axle.heading_rad,
-            steering_angle_rad=user_angle_rad,
-        )
-        right_solution = IdealWheelSolution(
-            wheel_id=right_wheel.id,
-            axle_id=right_wheel.axle_id,
-            side=right_wheel.side,
-            center=right_wheel.center,
-            heading_rad=user_heading,
-            reference_heading_rad=axle.heading_rad,
-            steering_angle_rad=user_angle_rad,
+        wheel_solutions = tuple(
+            IdealWheelSolution(
+                wheel_id=wheel.id,
+                axle_id=wheel.axle_id,
+                side=wheel.side,
+                center=wheel.center,
+                heading_rad=user_heading,
+                reference_heading_rad=axle.heading_rad,
+                steering_angle_rad=user_angle_rad,
+            )
+            for wheel in wheels
         )
     else:
-        left_solution = _solve_wheel_solution(left_wheel, target_icr, axle.heading_rad)
-        right_solution = _solve_wheel_solution(right_wheel, target_icr, axle.heading_rad)
+        wheel_solutions = tuple(
+            _solve_wheel_solution(wheel, target_icr, axle.heading_rad)
+            for wheel in wheels
+        )
+    left_solution = next(solution for solution in wheel_solutions if solution.side == "left")
+    right_solution = next(solution for solution in wheel_solutions if solution.side == "right")
 
     if target_icr is None:
         center_heading = axle.heading_rad
@@ -177,7 +182,7 @@ def _solve_axle_solution(axle: Axle, icr: Point2D | None) -> IdealAxleSolution:
     ]
     if limits:
         limit_deg = min(abs(limit) for limit in limits)
-        for wheel_solution in (left_solution, right_solution):
+        for wheel_solution in wheel_solutions:
             if abs(wheel_solution.steering_angle_deg) > limit_deg + 1e-9:
                 raise SteeringLimitExceededError(
                     wheel_solution.steering_angle_deg,
@@ -191,6 +196,7 @@ def _solve_axle_solution(axle: Axle, icr: Point2D | None) -> IdealAxleSolution:
         right_wheel=right_solution,
         reference_heading_rad=axle.heading_rad,
         center_steering_angle_rad=normalize_angle(center_heading - axle.heading_rad),
+        wheels=wheel_solutions,
     )
 
 
@@ -201,8 +207,8 @@ def solve_ideal_steering(vehicle: VehicleLayout, icr: Point2D | None) -> IdealSt
 
     for axle_solution in axle_solutions:
         axle_center_angles_rad[axle_solution.axle_id] = axle_solution.center_heading_rad
-        wheel_angles_rad[axle_solution.left_wheel.wheel_id] = axle_solution.left_wheel.heading_rad
-        wheel_angles_rad[axle_solution.right_wheel.wheel_id] = axle_solution.right_wheel.heading_rad
+        for wheel in axle_solution.wheel_solutions:
+            wheel_angles_rad[wheel.wheel_id] = wheel.heading_rad
 
     return IdealSteeringSolution(
         icr=icr,

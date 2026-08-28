@@ -2,39 +2,43 @@
 
 ## Purpose
 
-Model rigid planar steering linkages independently from the ideal steering solver.
+Model rigid planar steering mechanisms independently from the ideal steering
+solver. The model is intended to make every mechanism component and every wheel
+assignment explicit and traceable.
 
 ## Current solver shape
 
-The current linkage solver models a primary steered axle with an optional companion
-steered axle. Each path uses two analytic circle-intersection stages:
+The generalized `PlanarMechanismGraph` supports:
 
-1. Driver point to bell-crank input arm.
-2. Bell-crank output arm to steering arm.
+- fixed, driven, and free mechanism points;
+- rigid members with fixed lengths;
+- multiple connected members and shared joints;
+- body-local points transformed by articulated body pose;
+- named angle outputs and named wheel assignments; cross-body outputs are
+  measured in the endpoint body frame by default, or an explicit reference
+  body frame;
+- deterministic nonlinear closure solving with residual reporting;
+- collision exclusions derived only from genuinely connected members, with a
+  connected pair exempted only at its shared joint rather than across the full
+  member envelopes.
 
-This is enough to validate:
-
-- fixed link lengths;
-- branch continuity via previous-state selection;
-- impossible mechanism detection;
-- traceable residuals.
-
-Vehicle layouts may contain any number of axles for ideal steering and export.
-The rigid-link solver currently has explicit primary and companion paths rather
-than a generalized multi-axle tie-rod network. Other axles can still receive
-explicit `SAME_PHASE`, `OPPOSITE_PHASE`, `RATIO`, or `INDEPENDENT_TARGET`
-commands, and the `LINKED_MECHANICALLY` mode is retained as a traceable
-coordination channel until its fixed-length component graph is implemented.
+The legacy primary/companion linkage remains available as a compatibility model
+and as the current optimization target. It can be adapted into the generalized
+graph and is regression-tested against the analytical linkage behavior.
 
 ## Data flow
 
-- The caller provides a driver point for each articulation state.
-- The solver returns the chosen input endpoint, output endpoint, and steering endpoint.
-- The returned state includes rod-length residuals and branch indices.
+1. The combination solver resolves body poses and the maneuver ICR.
+2. Named mechanism drivers provide input points for each articulation state.
+3. The graph solver resolves all free point coordinates while preserving member
+   lengths.
+4. Named angle outputs map mechanism motion to explicit wheels.
+5. The actual-steering and clearance layers evaluate the same solved state.
 
-## Next extension points
+## Current product limitation
 
-- generalized multi-axle mechanical channels with multiple bell cranks and shared tie rods;
-- generalized fixed-length multi-axle component graphs;
-- collision envelopes for additional generalized rods and arms;
-- optimization variables on additional mechanism components.
+The graph core is generalized, but the browser builder currently generates a
+repeatable reference graph per steerable axle. It does not yet provide a full
+CAD-grade editor for arbitrary shared tie-rod networks or optimized graph
+geometry. Those capabilities require pilot geometry and Monroc acceptance cases
+before they should be treated as release functionality.

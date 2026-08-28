@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, replace
+import hashlib
 from typing import Iterable
 import math
 
 from .geometry import Point2D
+from .errors import InvalidGeometryError
 from .model import Axle, VehicleLayout
 
 
@@ -42,6 +44,46 @@ DXF_ROLE_OPTIONS: tuple[tuple[str, str], ...] = (
 _PARAMETRIC_SNAP_TOLERANCE_MM = 0.01
 _DXF_ROLE_VALUES = {value for value, _label in DXF_ROLE_OPTIONS}
 
+DXF_UNIT_OPTIONS: tuple[tuple[str, str, float | None], ...] = (
+    ("mm", "Millimetres", 1.0),
+    ("cm", "Centimetres", 10.0),
+    ("m", "Metres", 1000.0),
+    ("in", "Inches", 25.4),
+    ("unitless", "Unitless / unknown", None),
+)
+
+DXF_COORDINATE_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("x_forward_y_left", "X forward / Y left (Monroc model frame)"),
+    ("x_forward_y_right", "X forward / Y right (mirror Y)"),
+    ("x_rearward_y_left", "X rearward / Y left (mirror X)"),
+    ("x_rearward_y_right", "X rearward / Y right (mirror X and Y)"),
+)
+
+_DXF_UNIT_CODES = {
+    "0": "unitless",
+    "1": "in",
+    "4": "mm",
+    "5": "cm",
+    "6": "m",
+}
+_DXF_UNIT_ALIASES = {
+    "millimeter": "mm",
+    "millimeters": "mm",
+    "millimetre": "mm",
+    "millimetres": "mm",
+    "centimeter": "cm",
+    "centimeters": "cm",
+    "centimetre": "cm",
+    "centimetres": "cm",
+    "meter": "m",
+    "meters": "m",
+    "metre": "m",
+    "metres": "m",
+    "inch": "in",
+    "inches": "in",
+}
+_DXF_COORDINATE_VALUES = {value for value, _label in DXF_COORDINATE_OPTIONS}
+
 
 @dataclass(frozen=True, slots=True)
 class RawDxfEntity:
@@ -77,6 +119,13 @@ class DxfImportReport:
     warnings: tuple[str, ...]
     reconstructed_vehicle: VehicleLayout | None
     parametric_mechanism: "DxfParametricMechanism | None" = None
+    detected_units: str | None = None
+    source_units: str | None = None
+    unit_scale_to_mm: float | None = None
+    coordinate_system: str | None = None
+    metadata_confirmed: bool = False
+    import_ready: bool = False
+    source_sha256: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,25 +160,39 @@ def _point_payload(point: Point2D) -> dict[str, float]:
     return {"x_mm": point.x_mm, "y_mm": point.y_mm}
 
 
-def _serialize_vehicle(vehicle: VehicleLayout) -> dict[str, object]:
-    return {
+def _serialize_vehicle(
+    vehicle: VehicleLayout,
+    *,
+    cad_source: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload = {
         "id": vehicle.id,
         "name": vehicle.name,
         "body_length_mm": vehicle.body_length_mm,
         "body_width_mm": vehicle.body_width_mm,
         "origin": _point_payload(vehicle.origin),
+        "body_polygon": [_point_payload(point) for point in vehicle.body_polygon],
         "axle_span_mm": vehicle.axle_span_mm(),
         "axles": [
             {
                 "id": axle.id,
                 "center": _point_payload(axle.center),
                 "track_mm": axle.track_mm,
+                "wheel_count": axle.wheel_count,
+                "wheel_lateral_offsets_mm": (
+                    None
+                    if axle.wheel_lateral_offsets_mm is None
+                    else list(axle.wheel_lateral_offsets_mm)
+                ),
                 "steerable": axle.steerable,
                 "steering_mode": axle.steering_mode,
             }
             for axle in vehicle.axles
         ],
     }
+    if cad_source is not None:
+        payload["cad_source"] = cad_source
+    return payload
 
 
 def _serialize_geometry(value: object) -> object:
@@ -180,8 +243,33 @@ def _serialize_parametric_mechanism(mechanism: DxfParametricMechanism) -> dict[s
 
 
 def serialize_dxf_import_report(report: DxfImportReport) -> dict[str, object]:
+    cad_source = None
+    if report.import_ready:
+        cad_source = {
+            "source_name": report.source_name,
+            "source_sha256": report.source_sha256,
+            "source_units": report.source_units,
+            "unit_scale_to_mm": report.unit_scale_to_mm,
+            "coordinate_system": report.coordinate_system,
+            "metadata_confirmed": report.metadata_confirmed,
+        }
     return {
         "source_name": report.source_name,
+        "source_sha256": report.source_sha256,
+        "detected_units": report.detected_units,
+        "source_units": report.source_units,
+        "unit_scale_to_mm": report.unit_scale_to_mm,
+        "coordinate_system": report.coordinate_system,
+        "metadata_confirmed": report.metadata_confirmed,
+        "import_ready": report.import_ready,
+        "unit_options": [
+            {"value": value, "label": label, "scale_to_mm": scale}
+            for value, label, scale in DXF_UNIT_OPTIONS
+        ],
+        "coordinate_options": [
+            {"value": value, "label": label}
+            for value, label in DXF_COORDINATE_OPTIONS
+        ],
         "entity_count": report.entity_count,
         "supported_entity_count": report.supported_entity_count,
         "unsupported_entity_count": report.unsupported_entity_count,
@@ -222,7 +310,11 @@ def serialize_dxf_import_report(report: DxfImportReport) -> dict[str, object]:
             {"value": value, "label": label}
             for value, label in DXF_ROLE_OPTIONS
         ],
-        "reconstructed_vehicle": None if report.reconstructed_vehicle is None else _serialize_vehicle(report.reconstructed_vehicle),
+        "reconstructed_vehicle": (
+            None
+            if report.reconstructed_vehicle is None
+            else _serialize_vehicle(report.reconstructed_vehicle, cad_source=cad_source)
+        ),
         "parametric_mechanism": (
             None
             if report.parametric_mechanism is None
@@ -239,6 +331,97 @@ def _pair_tokens(lines: Iterable[str]) -> list[tuple[str, str]]:
     for index in range(0, len(raw_lines), 2):
         pairs.append((raw_lines[index].strip(), raw_lines[index + 1].strip()))
     return pairs
+
+
+def _read_header_units(pairs: list[tuple[str, str]]) -> str | None:
+    """Read the optional AutoCAD $INSUNITS header variable."""
+    inside_header = False
+    for index, (code, value) in enumerate(pairs):
+        if code == "0" and value == "SECTION":
+            inside_header = index + 1 < len(pairs) and pairs[index + 1] == ("2", "HEADER")
+            continue
+        if code == "0" and value == "ENDSEC":
+            inside_header = False
+            continue
+        if inside_header and code == "9" and value.upper() == "$INSUNITS":
+            for group_code, group_value in pairs[index + 1 : index + 4]:
+                if group_code == "70":
+                    return _DXF_UNIT_CODES.get(group_value)
+    return None
+
+
+def _normalize_source_units(value: object) -> str | None:
+    if value is None or str(value).strip() == "":
+        return None
+    normalized = str(value).strip().lower()
+    normalized = _DXF_UNIT_ALIASES.get(normalized, normalized)
+    if normalized in _DXF_UNIT_CODES:
+        normalized = _DXF_UNIT_CODES[normalized]
+    valid_units = {option[0] for option in DXF_UNIT_OPTIONS}
+    if normalized not in valid_units:
+        raise ValueError(
+            f"Unsupported DXF source units {value!r}; choose mm, cm, m, in, or unitless."
+        )
+    return normalized
+
+
+def _unit_scale_to_mm(source_units: str | None) -> float | None:
+    for value, _label, scale in DXF_UNIT_OPTIONS:
+        if value == source_units:
+            return scale
+    return None
+
+
+def _normalize_coordinate_system(value: object) -> str | None:
+    if value is None or str(value).strip() == "":
+        return None
+    normalized = str(value).strip().lower()
+    if normalized not in _DXF_COORDINATE_VALUES:
+        raise ValueError(
+            "Unsupported DXF coordinate_system; choose an explicit model frame "
+            "from the coordinate options."
+        )
+    return normalized
+
+
+def _transform_raw_entity(
+    record: RawDxfEntity,
+    *,
+    scale_to_mm: float,
+    coordinate_system: str | None,
+) -> RawDxfEntity:
+    mirror_x = coordinate_system in {"x_rearward_y_left", "x_rearward_y_right"}
+    mirror_y = coordinate_system in {"x_forward_y_right", "x_rearward_y_right"}
+    x_codes = {"10", "11", "12", "13"}
+    y_codes = {"20", "21", "22", "23"}
+
+    def transform_group(code: str, value: str) -> tuple[str, str]:
+        if code not in x_codes and code not in y_codes and code != "40":
+            return code, value
+        try:
+            numeric_value = float(value)
+        except ValueError:
+            return code, value
+        if code in x_codes and mirror_x:
+            numeric_value = -numeric_value
+        if code in y_codes and mirror_y:
+            numeric_value = -numeric_value
+        if code in x_codes or code in y_codes or code == "40":
+            numeric_value *= scale_to_mm
+        return code, f"{numeric_value:.12g}"
+
+    return RawDxfEntity(
+        record.entity_type,
+        tuple(transform_group(code, value) for code, value in record.groups),
+        tuple(
+            _transform_raw_entity(
+                vertex,
+                scale_to_mm=scale_to_mm,
+                coordinate_system=coordinate_system,
+            )
+            for vertex in record.vertices
+        ),
+    )
 
 
 def _read_section_name(pairs: list[tuple[str, str]], index: int) -> tuple[str | None, int]:
@@ -720,6 +903,16 @@ def _reconstruct_vehicle_layout(entities: list[DxfImportedEntity], source_name: 
         body_length_mm = 0.0
         body_width_mm = 0.0
 
+    body_polygon: tuple[Point2D, ...] = ()
+    if body_entity is not None:
+        raw_polygon = body_entity.geometry.get("points")
+        if isinstance(raw_polygon, tuple) and len(raw_polygon) >= 3 and all(
+            isinstance(point, Point2D) for point in raw_polygon
+        ):
+            body_polygon = tuple(
+                point - origin for point in raw_polygon  # type: ignore[operator]
+            )
+
     ordered_axles = sorted(
         axle_entities,
         key=lambda entity: (_entity_center(entity).x_mm if _entity_center(entity) is not None else 0.0),
@@ -752,6 +945,7 @@ def _reconstruct_vehicle_layout(entities: list[DxfImportedEntity], source_name: 
         body_length_mm=body_length_mm,
         body_width_mm=body_width_mm,
         origin=origin,
+        body_polygon=body_polygon,
     )
 
 
@@ -784,7 +978,12 @@ def apply_dxf_role_overrides(report: DxfImportReport, role_overrides: dict[int, 
             )
         )
 
-    reconstructed_vehicle = _reconstruct_vehicle_layout(overridden_entities, report.source_name)
+    warnings = list(report.warnings)
+    try:
+        reconstructed_vehicle = _reconstruct_vehicle_layout(overridden_entities, report.source_name)
+    except InvalidGeometryError as error:
+        reconstructed_vehicle = None
+        warnings.append(f"DXF vehicle reconstruction blocked: {error}")
     parametric_mechanism = _build_parametric_mechanism(overridden_entities, report.source_name)
     return DxfImportReport(
         source_name=report.source_name,
@@ -795,17 +994,75 @@ def apply_dxf_role_overrides(report: DxfImportReport, role_overrides: dict[int, 
         counts_by_layer=report.counts_by_layer,
         bounds_mm=report.bounds_mm,
         entities=tuple(overridden_entities),
-        warnings=report.warnings,
+        warnings=tuple(warnings),
         reconstructed_vehicle=reconstructed_vehicle,
         parametric_mechanism=parametric_mechanism,
+        detected_units=report.detected_units,
+        source_units=report.source_units,
+        unit_scale_to_mm=report.unit_scale_to_mm,
+        coordinate_system=report.coordinate_system,
+        metadata_confirmed=report.metadata_confirmed,
+        import_ready=report.import_ready,
+        source_sha256=report.source_sha256,
     )
 
 
-def analyze_dxf_import(dxf_text: str, source_name: str = "") -> DxfImportReport:
+def analyze_dxf_import(
+    dxf_text: str,
+    source_name: str = "",
+    *,
+    source_units: str | None = None,
+    coordinate_system: str | None = None,
+    confirm_metadata: bool = False,
+) -> DxfImportReport:
     pairs = _pair_tokens(dxf_text.splitlines())
+    detected_units = _read_header_units(pairs)
+    normalized_units = _normalize_source_units(source_units) if source_units is not None else detected_units
+    normalized_coordinate_system = _normalize_coordinate_system(coordinate_system)
+    unit_scale_to_mm = _unit_scale_to_mm(normalized_units)
+    metadata_warnings: list[str] = []
+    if normalized_units == "unitless":
+        metadata_warnings.append(
+            "DXF source units are unitless; choose a real source unit before applying geometry."
+        )
+    elif normalized_units is None:
+        metadata_warnings.append(
+            "DXF does not declare source units; select the units used by the CAD author before applying geometry."
+        )
+    if normalized_coordinate_system is None:
+        metadata_warnings.append(
+            "DXF coordinate frame is not declared; choose how CAD X/Y map to the Monroc model frame before applying geometry."
+        )
+    if (
+        source_units is not None
+        and detected_units is not None
+        and normalized_units != detected_units
+    ):
+        metadata_warnings.append(
+            f"Selected source units {normalized_units!r} override the DXF header value {detected_units!r}."
+        )
+    metadata_confirmed = bool(confirm_metadata)
+    metadata_ready = bool(
+        metadata_confirmed
+        and unit_scale_to_mm is not None
+        and normalized_coordinate_system is not None
+    )
+    if confirm_metadata and not metadata_ready:
+        metadata_warnings.append(
+            "Import confirmation is incomplete; geometry activation remains blocked."
+        )
     raw_records, warnings = _collect_raw_entities(pairs)
+    warnings.extend(metadata_warnings)
     raw_records, polyline_warnings = _attach_polyline_vertices(raw_records)
     warnings.extend(polyline_warnings)
+    raw_records = [
+        _transform_raw_entity(
+            record,
+            scale_to_mm=unit_scale_to_mm or 1.0,
+            coordinate_system=normalized_coordinate_system,
+        )
+        for record in raw_records
+    ]
 
     entities: list[DxfImportedEntity] = []
     entity_bounds: list[tuple[float, float, float, float] | None] = []
@@ -839,13 +1096,28 @@ def analyze_dxf_import(dxf_text: str, source_name: str = "") -> DxfImportReport:
         )
         entity_bounds.append(bounds_mm)
 
-    reconstructed_vehicle = _reconstruct_vehicle_layout(entities, source_name)
+    try:
+        reconstructed_vehicle = _reconstruct_vehicle_layout(entities, source_name)
+    except InvalidGeometryError as error:
+        reconstructed_vehicle = None
+        warnings.append(f"DXF vehicle reconstruction blocked: {error}")
     parametric_mechanism = _build_parametric_mechanism(entities, source_name)
     counts_by_type = dict(sorted(Counter(entity.entity_type for entity in entities).items()))
     counts_by_layer = dict(sorted(Counter(entity.layer or "UNLAYERED" for entity in entities).items()))
 
     if not entities:
         warnings.append("No DXF entities were found inside the ENTITIES section.")
+    if unsupported_count:
+        warnings.append(
+            f"{unsupported_count} unsupported DXF entr{'y' if unsupported_count == 1 else 'ies'} "
+            "were omitted; re-export supported geometry before applying the import."
+        )
+    import_ready = bool(
+        metadata_ready
+        and unsupported_count == 0
+        and entities
+        and reconstructed_vehicle is not None
+    )
 
     return DxfImportReport(
         source_name=source_name,
@@ -859,4 +1131,11 @@ def analyze_dxf_import(dxf_text: str, source_name: str = "") -> DxfImportReport:
         warnings=tuple(warnings),
         reconstructed_vehicle=reconstructed_vehicle,
         parametric_mechanism=parametric_mechanism,
+        detected_units=detected_units,
+        source_units=normalized_units,
+        unit_scale_to_mm=unit_scale_to_mm,
+        coordinate_system=normalized_coordinate_system,
+        metadata_confirmed=metadata_confirmed,
+        import_ready=import_ready,
+        source_sha256=hashlib.sha256(dxf_text.encode("utf-8")).hexdigest(),
     )

@@ -59,11 +59,46 @@ delta_outer = atan(L / (R + T/2))
 
 For right turns, the same magnitudes apply with negative sign.
 
-## Prototype beta mapping
+## Multi-body maneuver kinematics
 
-The initial browser demo uses a surrogate `beta -> radius` mapping only to drive an interactive visualization. It is not the final multi-body trailer articulation solver.
+`solve_combination_kinematics` resolves every rigid-body pose and mounted axle
+before solving wheel headings around one world-space ICR. The maneuver is
+defined in one of two engineering-valid ways:
 
-This temporary mapping is acceptable for the first geometric prototype because it keeps the steering math testable while the trailer articulation model is still being defined.
+- an explicit signed turn radius relative to the root body; or
+- an ICR derived from at least two non-parallel fixed-axle rolling constraints.
+
+Every additional fixed axle must pass through the same ICR within the configured
+length tolerance. Incompatible articulation chains raise
+`MULTIBODY_KINEMATIC_INCONSISTENT`; they are never silently approximated.
+
+## Legacy single-layout beta mapping
+
+The legacy single-layout browser path uses a surrogate `beta -> radius` mapping.
+It remains available for quick reference studies, but it is not used by the
+explicit multi-body combination path described above.
+
+Production design acceptance must use an explicit maneuver definition and a
+Monroc-approved reference case rather than relying on this surrogate mapping.
+
+## Generalized mechanical component graph
+
+`PlanarMechanismGraph` represents a mechanism as stable-ID points and rigid
+members rather than a fixed primary/companion schema. Points are fixed, driven,
+or free. Steering arms, rods, bell cranks, and longer synchronization chains are
+expressed as distance constraints; a bell crank is a rigid triangle whose third
+member preserves the included arm angle.
+
+`solve_mechanism_graph` solves all free point coordinates together, checks every
+member residual against the configured geometric tolerance, maintains the
+previous sweep branch, and enforces declared angle limits. Shared endpoints
+derive collision exclusions automatically. Non-connected members remain in the
+clearance analysis even when they cross near another component's joint.
+
+The legacy analytical linkage has an adapter into this graph and is regression
+checked against the graph solution. New mechanisms should use the graph API;
+the analytical solver remains as an independently testable reference for the
+single-layout path.
 
 ## Tolerances
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+from .errors import InvalidGeometryError
+
 EPSILON_MM = 1e-9
 
 
@@ -10,6 +12,10 @@ EPSILON_MM = 1e-9
 class Point2D:
     x_mm: float
     y_mm: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.x_mm) or not math.isfinite(self.y_mm):
+            raise InvalidGeometryError("Point coordinates must be finite.")
 
     def __add__(self, other: "Point2D") -> "Point2D":
         return Point2D(self.x_mm + other.x_mm, self.y_mm + other.y_mm)
@@ -73,4 +79,3 @@ def tangent_heading_from_icr(
 
 def heading_vector(angle_rad: float) -> Point2D:
     return Point2D(math.cos(angle_rad), math.sin(angle_rad))
-

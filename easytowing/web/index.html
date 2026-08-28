@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EasyTowing Prototype</title>
+  <title>EasyTowing Engineering Workspace</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
@@ -11,16 +11,61 @@
   <div class="shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Phase 1 foundation</p>
-        <h1>EasyTowing Ideal Steering Prototype</h1>
+        <p class="eyebrow">Monroc Design Engineering</p>
+        <h1>EasyTowing Steering Workspace</h1>
       </div>
       <div class="status-card">
         <span class="status-label">Mode</span>
         <strong id="status-mode-value">Simulation</strong>
       </div>
     </header>
+    <div class="trust-banner" role="note" aria-label="Engineering use boundary">
+      <div>
+        <strong>Simulation and reference data</strong>
+        <p>Replace the seeded geometry with an approved Monroc CAD layout before using an engineering result.</p>
+      </div>
+      <span>Not a manufacturing release</span>
+    </div>
 
     <main class="workspace">
+      <nav class="workflow-nav" aria-label="Engineering workflow">
+        <p class="workflow-kicker">Design workflow</p>
+        <button class="workflow-step is-active" type="button" data-workflow-step="project">
+          <span>01</span>
+          <strong>Project</strong>
+          <small>Start here</small>
+        </button>
+        <button class="workflow-step" type="button" data-workflow-step="vehicle">
+          <span>02</span>
+          <strong>Vehicle</strong>
+          <small>Combination layout</small>
+        </button>
+        <button class="workflow-step" type="button" data-workflow-step="maneuver">
+          <span>03</span>
+          <strong>Maneuver</strong>
+          <small>Test case</small>
+        </button>
+        <button class="workflow-step" type="button" data-workflow-step="mechanism">
+          <span>04</span>
+          <strong>Mechanism</strong>
+          <small>Physical linkage</small>
+        </button>
+        <button class="workflow-step" type="button" data-workflow-step="validate">
+          <span>05</span>
+          <strong>Validate</strong>
+          <small>Hard checks</small>
+        </button>
+        <button class="workflow-step" type="button" data-workflow-step="optimize">
+          <span>06</span>
+          <strong>Optimize</strong>
+          <small>Optional search</small>
+        </button>
+        <button class="workflow-step" type="button" data-workflow-step="results">
+          <span>07</span>
+          <strong>Results</strong>
+          <small>Decision and evidence</small>
+        </button>
+      </nav>
       <section class="canvas-card">
         <div class="card-header">
           <div>
@@ -37,7 +82,7 @@
               <option value="optimized">Optimized design</option>
             </select>
             <button id="interactive-edit-toggle" type="button" aria-pressed="false">Edit axle layout</button>
-            <div class="chip" id="radius-chip">ICR proxy</div>
+            <div class="chip" id="radius-chip">Maneuver ICR</div>
           </div>
         </div>
         <div class="diagram-stack">
@@ -47,13 +92,82 @@
       </section>
 
       <aside class="info-panel">
-        <div class="wheel-table-card">
+        <div class="workflow-context">
+          <span id="workflow-step-number">Step 01</span>
+          <h2 id="workflow-step-title">Project</h2>
+          <p id="workflow-step-description">Open a design project or create a controlled starting revision.</p>
+        </div>
+        <details id="workflow-guide" class="workflow-brief" open>
+          <summary class="workflow-guide-summary">
+            <span class="card-kicker">Decision path</span>
+            <strong>Define, solve, prove, review</strong>
+            <small>How this workspace works</small>
+          </summary>
+          <div class="workflow-brief-body">
+          <p class="workflow-brief-question"><strong>The engineering question:</strong> does this defined towing-axis mechanism steer every mapped wheel correctly and remain physically feasible across the selected articulation range?</p>
+          <ol>
+            <li><strong>Define:</strong> bodies, axles, pivots, links, and wheel mappings.</li>
+            <li><strong>Solve:</strong> compute the common maneuver geometry and mechanism pose.</li>
+            <li><strong>Prove:</strong> check closure, steering, collision, and clearance at every pose.</li>
+            <li><strong>Review:</strong> save the evidence, compare the proposal, then submit it for independent approval.</li>
+          </ol>
+          <div class="workflow-brief-result">
+            <strong>What the result contains</strong>
+            <p>Actual versus ideal wheel angles, mechanism residuals, collision and clearance findings, full-range evidence, and a traceable project revision.</p>
+          </div>
+          <p class="workflow-brief-rule"><strong>PASS</strong> means the configured hard checks pass. <strong>FAIL</strong> means diagnostic evidence only, never a manufacturing release.</p>
+          </div>
+        </details>
+        <div class="workflow-next-action" id="workflow-next-action">
+          <p class="card-kicker">Next action</p>
+          <strong id="workflow-next-title">Open or create a project</strong>
+          <p id="workflow-next-detail">Start with a named project so every calculation and review decision is saved as a revision.</p>
+          <button id="workflow-next-button" type="button">Go to Project</button>
+        </div>
+        <div class="wheel-table-card" data-workflow-panel="project">
           <div class="project-header">
-            <h3>Project</h3>
+            <div>
+              <p class="card-kicker">Project dashboard</p>
+              <h3>Project</h3>
+            </div>
             <div class="project-controls">
+              <select id="project-selector" aria-label="Open project">
+                <option value="">Sign in to load projects</option>
+              </select>
               <input id="project-name-input" type="text" value="Reference Demo Project" aria-label="Project name">
               <button id="project-create-button" type="button">Create</button>
               <button id="project-save-button" type="button">Save Revision</button>
+            </div>
+          </div>
+          <div id="project-start-card" class="project-start-card" data-status="start">
+            <div class="project-start-copy">
+              <p class="card-kicker">Start here</p>
+              <h3>Define a steering mechanism for a towing combination</h3>
+              <p>This workspace turns vehicle geometry and physical linkage dimensions into a checked engineering proposal. It is not only an angle calculator.</p>
+            </div>
+            <div class="project-start-grid">
+              <div>
+                <span>Input</span>
+                <strong>CAD and layout</strong>
+                <p>Bodies, axles, wheel envelopes, joints, and stops.</p>
+              </div>
+              <div>
+                <span>Calculation</span>
+                <strong>Ideal versus actual</strong>
+                <p>Target wheel headings compared with the physical mechanism.</p>
+              </div>
+              <div>
+                <span>Decision</span>
+                <strong>PASS or FAIL</strong>
+                <p>Current pose and full articulation range, not a visual guess.</p>
+              </div>
+            </div>
+            <div class="project-start-action">
+              <div>
+                <strong id="project-start-title">Create or open a project</strong>
+                <p id="project-start-detail">Every calculation is saved as a named revision before review.</p>
+              </div>
+              <button id="project-start-button" class="primary-action" type="button">Start setup</button>
             </div>
           </div>
           <div class="project-summary">
@@ -69,12 +183,53 @@
               <span class="metric-label">Revision count</span>
               <strong id="project-revision-count-value">0</strong>
             </div>
+            <div class="metric-card metric-card-compact project-dashboard-status" id="project-engineering-card" data-status="incomplete">
+              <span class="metric-label">Engineering verdict</span>
+              <strong id="project-engineering-state">INCOMPLETE</strong>
+              <span class="metric-detail" id="project-engineering-detail">Run the current pose and full-range checks.</span>
+            </div>
+            <div class="metric-card metric-card-compact project-dashboard-status" id="project-review-card" data-status="draft">
+              <span class="metric-label">Review gate</span>
+              <strong id="project-review-state">DRAFT</strong>
+              <span class="metric-detail" id="project-review-detail">Not submitted for independent review.</span>
+            </div>
+            <div class="metric-card metric-card-compact project-dashboard-status" id="project-scope-card" data-status="waiting">
+              <span class="metric-label">Model scope</span>
+              <strong id="project-model-scope">n/a</strong>
+              <span class="metric-detail" id="project-model-detail">Define the towing combination.</span>
+            </div>
           </div>
           <input id="project-note-input" class="project-note-input" type="text" value="Current design snapshot" placeholder="Revision note" aria-label="Revision note">
           <div id="project-revision-list" class="wheel-table"></div>
         </div>
 
-        <div class="wheel-table-card geometry-card">
+        <details id="workspace-access-card" class="wheel-table-card access-card" data-workflow-panel="project">
+          <summary>Workspace access</summary>
+          <p id="auth-status" class="curve-note">Checking workspace security...</p>
+          <form id="auth-form">
+            <div class="auth-grid">
+              <label>
+                Organization
+                <input id="auth-organization" type="text" value="monroc" autocomplete="organization">
+              </label>
+              <label>
+                Email
+                <input id="auth-email" type="email" placeholder="engineer@company.com" autocomplete="username">
+              </label>
+              <label>
+                Password
+                <input id="auth-password" type="password" autocomplete="current-password">
+              </label>
+            </div>
+            <div class="project-controls">
+              <button id="auth-login-button" type="submit">Sign in</button>
+              <button id="auth-logout-button" type="button" disabled>Sign out</button>
+            </div>
+          </form>
+        </details>
+
+        <details class="wheel-table-card geometry-card legacy-geometry-card" data-workflow-panel="vehicle">
+          <summary>Advanced: legacy single-layout axle study</summary>
           <div class="project-header">
             <h3>Vehicle geometry</h3>
             <button id="geometry-apply-button" type="button">Apply</button>
@@ -140,10 +295,130 @@
             </label>
           </div>
           <div id="custom-axle-config" class="custom-axle-config"></div>
-          <p id="custom-axle-status" class="curve-note">Reference two-axle linkage is active. Secondary axle sync channels are traceable commands; generalized multi-axle rigid tie-rod networks remain deferred.</p>
+          <p id="custom-axle-status" class="curve-note">Reference ideal-axle study is active. Use the Mechanism step for the explicit multi-body linkage graph and named wheel mappings.</p>
+        </details>
+
+        <div class="wheel-table-card combination-card" data-workflow-panel="vehicle">
+          <div class="project-header">
+            <div>
+              <p class="card-kicker">Multi-body model</p>
+              <h3>Vehicle combination</h3>
+            </div>
+            <div class="project-controls combination-mode-controls">
+              <span id="combination-mode-state" class="mode-state" data-status="active">ACTIVE</span>
+              <button id="combination-activate-button" type="button" hidden>Use multi-body workflow</button>
+            </div>
+          </div>
+          <p id="combination-mode-note" class="curve-note">Define every rigid body, articulation joint, and mounted axle. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Continue to Maneuver when the physical combination is complete.</p>
+          <div id="combination-fields" class="combination-fields">
+          <div class="geometry-input-grid">
+            <label>
+              Body count
+              <input id="combination-body-count" type="number" min="1" max="6" step="1" value="2" inputmode="numeric">
+            </label>
+          </div>
+          <div id="combination-config" class="combination-config"></div>
+          </div>
         </div>
 
-        <div class="wheel-table-card linkage-card">
+        <div class="wheel-table-card maneuver-card" data-workflow-panel="maneuver">
+          <div class="project-header">
+            <div>
+              <p class="card-kicker">Maneuver definition</p>
+              <h3>Define the steering case</h3>
+            </div>
+            <button id="combination-calculate-button" type="button">Resolve maneuver</button>
+          </div>
+          <p class="curve-note">Choose the signed root turn radius for the design case. Positive and negative values represent opposite turning directions. The solver uses this same maneuver definition for current-pose checks and full-range validation.</p>
+          <div class="geometry-input-grid">
+            <label>
+              Signed root radius (mm)
+              <input id="combination-turn-radius" type="number" step="100" value="9000" inputmode="decimal">
+            </label>
+          </div>
+          <p id="combination-status" class="curve-note">Define the vehicle combination first, then resolve this maneuver to calculate articulated body poses and ideal steering targets.</p>
+        </div>
+
+        <div class="wheel-table-card mechanism-graph-card" data-workflow-panel="mechanism">
+          <div class="project-header">
+            <div>
+              <p class="card-kicker">Generalized component graph</p>
+              <h3>Mechanism installation</h3>
+            </div>
+            <div class="project-controls">
+              <button id="mechanism-graph-build-button" type="button">Build graph</button>
+              <button id="mechanism-graph-solve-button" type="button" disabled>Solve design</button>
+            </div>
+          </div>
+          <p class="curve-note">This page describes the physical steering hardware, not the vehicle layout. Build one body-mounted linkage module per steerable axle, map each output to its wheel, then solve it before validation or optimization.</p>
+          <div class="project-summary">
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">Points</span>
+              <strong id="mechanism-graph-point-count">0</strong>
+            </div>
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">Members</span>
+              <strong id="mechanism-graph-member-count">0</strong>
+            </div>
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">Wheel maps</span>
+              <strong id="mechanism-graph-assignment-count">0</strong>
+            </div>
+          </div>
+          <div id="mechanism-graph-mapping" class="wheel-table"></div>
+          <p id="mechanism-graph-status" class="curve-note">Build the graph after defining the active vehicle combination.</p>
+          <details id="mechanism-graph-editor" class="graph-editor">
+            <summary>Edit graph topology and outputs</summary>
+          <p class="curve-note">Use local millimetre coordinates for points. Shared point IDs connect components; body IDs place a component on a body and allow the solver to carry it through articulation. Cross-body outputs are measured relative to the endpoint body unless an explicit reference body is supplied.</p>
+            <div class="graph-editor-actions">
+              <button id="mechanism-graph-apply-button" type="button" disabled>Apply graph edits</button>
+              <button id="mechanism-graph-add-point-button" type="button" disabled>Add point</button>
+              <button id="mechanism-graph-add-member-button" type="button" disabled>Add member</button>
+              <button id="mechanism-graph-add-output-button" type="button" disabled>Add output</button>
+              <button id="mechanism-graph-add-driver-button" type="button" disabled>Add driver</button>
+              <button id="mechanism-graph-add-assignment-button" type="button" disabled>Add wheel map</button>
+            </div>
+            <p id="mechanism-graph-editor-status" class="curve-note">Build the reference graph, then edit its topology or mappings here.</p>
+            <section class="graph-editor-section">
+              <div class="graph-editor-section-header">
+                <h4>Points</h4>
+                <span>Fixed, driven, or free nodes</span>
+              </div>
+              <div id="mechanism-point-editor" class="graph-editor-list"></div>
+            </section>
+            <section class="graph-editor-section">
+              <div class="graph-editor-section-header">
+                <h4>Rigid members</h4>
+                <span>Arms, rods, and braces</span>
+              </div>
+              <div id="mechanism-member-editor" class="graph-editor-list"></div>
+            </section>
+            <section class="graph-editor-section">
+              <div class="graph-editor-section-header">
+                <h4>Angle outputs</h4>
+                <span>Named steering directions</span>
+              </div>
+              <div id="mechanism-output-editor" class="graph-editor-list"></div>
+            </section>
+            <section class="graph-editor-section">
+              <div class="graph-editor-section-header">
+                <h4>Drivers</h4>
+                <span>Articulation inputs</span>
+              </div>
+              <div id="mechanism-driver-editor" class="graph-editor-list"></div>
+            </section>
+            <section class="graph-editor-section">
+              <div class="graph-editor-section-header">
+                <h4>Wheel mappings</h4>
+                <span>Output to wheel assignments; one output may drive a wheel end</span>
+              </div>
+              <div id="mechanism-assignment-editor" class="graph-editor-list"></div>
+            </section>
+          </details>
+        </div>
+
+        <details class="wheel-table-card linkage-card legacy-linkage-card" data-workflow-panel="mechanism">
+          <summary>Advanced: legacy two-wheel linkage dimensions</summary>
           <div class="project-header">
             <h3>Mechanical linkage</h3>
             <div class="project-controls">
@@ -160,41 +435,61 @@
             Enable companion steering arm and tie rod
           </label>
           <div id="linkage-companion-config" class="linkage-config-grid"></div>
+        </details>
+
+        <div class="wheel-table-card decision-summary-card" data-workflow-panel="results" id="results-decision-card" data-status="pending">
+          <div class="validation-verdict-row">
+            <div>
+              <p class="card-kicker">Engineering decision</p>
+              <h3>Can this design be released?</h3>
+              <p id="results-decision-summary" class="curve-note">Run the maneuver and full-range validation before interpreting the result.</p>
+            </div>
+            <strong id="results-decision-status">NOT RUN</strong>
+          </div>
+          <div id="results-decision-checks" class="decision-checks"></div>
+          <div class="decision-reading-guide">
+            <p class="card-kicker">How to read this</p>
+            <p><strong>PASS</strong> means every configured hard check is within the entered limits.</p>
+            <p><strong>FAIL</strong> means at least one check fails and the design needs correction.</p>
+            <p><strong>PENDING or BLOCKED</strong> means the evidence or approval needed for release is missing.</p>
+          </div>
+          <p id="results-decision-note" class="decision-summary-note">Diagnostic results are not a manufacturing release. The release gate also requires signed-off Monroc criteria and independent approval.</p>
         </div>
 
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Beta</span>
           <strong id="beta-value">0.0 deg</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Turn radius</span>
           <strong id="radius-value">Straight</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Max wheel angle</span>
           <strong id="max-angle-value">0.0 deg</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Front/rear phase</span>
           <strong id="phase-value">0.0 deg</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Max actual error</span>
           <strong id="actual-error-value">n/a</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Sync error</span>
           <strong id="synchronization-error-value">n/a</strong>
         </div>
 
-        <div class="wheel-table-card">
+        <div class="wheel-table-card" data-workflow-panel="results">
           <h3>Wheel steering angles</h3>
+          <p class="result-legend"><strong>Ideal</strong> is the geometric target for the maneuver. <strong>Actual</strong> is the angle produced by the mechanism. <strong>Error</strong> is Actual minus Ideal; all values are degrees.</p>
           <div id="wheel-table" class="wheel-table"></div>
           <h3 class="subtable-heading">Synchronization channels</h3>
           <div id="synchronization-table" class="wheel-table"></div>
         </div>
 
-        <div class="wheel-table-card">
+        <div class="wheel-table-card" data-workflow-panel="results">
           <h3>Body chain</h3>
           <div class="body-chain-summary">
             <div class="metric-card metric-card-compact">
@@ -213,53 +508,136 @@
           <div id="body-chain-table" class="wheel-table"></div>
         </div>
 
-        <div class="wheel-table-card curve-card">
+        <div class="wheel-table-card curve-card" data-workflow-panel="results">
           <h3>Steering curves</h3>
           <img id="steering-curves-image" class="curve-preview" alt="Steering curves chart">
+          <p id="steering-curves-status" class="curve-note">Loading diagnostic preview...</p>
           <p class="curve-note">
             The chart sweeps the full articulation range and compares ideal wheel headings with baseline and optimized linkage response.
           </p>
         </div>
 
-        <div class="wheel-table-card curve-card">
+        <div class="wheel-table-card curve-card" data-workflow-panel="results">
           <h3>Swept path</h3>
           <img id="swept-path-image" class="curve-preview" alt="Swept path preview">
+          <p id="swept-path-status" class="curve-note">Loading diagnostic preview...</p>
           <p class="curve-note">
             Basic swept-path envelopes are approximated from the articulation sweep so you can inspect wheel center paths and body extents.
           </p>
         </div>
 
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Actual front wheels L / R</span>
           <strong id="linkage-steer-value">0.00 deg</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Front wheel error L / R</span>
           <strong id="linkage-error-value">0.00 deg</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Rod residuals</span>
           <strong id="linkage-residual-value">0.000 / 0.000 mm</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="results">
           <span class="metric-label">Branch</span>
           <strong id="linkage-branch-value">0 / 0</strong>
         </div>
 
-        <div class="metric-card">
+        <div class="wheel-table-card current-validation-card" data-workflow-panel="validate" id="current-validation-card">
+          <p class="card-kicker">Current design</p>
+          <div class="validation-verdict-row">
+            <div>
+              <h3>Physical feasibility checks</h3>
+              <p id="current-validation-summary" class="curve-note">Run the maneuver to evaluate the current design.</p>
+            </div>
+            <strong id="current-validation-status">NOT RUN</strong>
+          </div>
+          <div id="current-validation-checks" class="validation-checks"></div>
+          <div id="current-steering-interpretation" class="steering-interpretation" data-status="pending">
+            <strong id="current-steering-status">STEERING CRITERION PENDING</strong>
+            <span id="current-steering-detail">Steering accuracy is not classified until signed-off Monroc limits are entered and evaluated.</span>
+          </div>
+          <div id="current-validation-guidance" class="validation-guidance" hidden></div>
+          <p class="validation-disclaimer">These checks establish physical feasibility only. Steering accuracy and synchronization are classified separately against approved Monroc limits below.</p>
+          <details class="acceptance-panel">
+            <summary>Monroc acceptance criteria</summary>
+            <p class="curve-note">Use signed-off limits from the selected Monroc reference case. The server must also have the exact approved profile configured; entered trial limits cannot authorize release.</p>
+            <div class="geometry-input-grid">
+              <label>
+                Case ID
+                <input id="acceptance-case-id" type="text" placeholder="e.g. MONROC-01">
+              </label>
+              <label>
+                Minimum clearance (mm)
+                <input id="acceptance-min-clearance" type="number" min="0" step="0.1" placeholder="approved limit">
+              </label>
+              <label>
+                Max wheel error (deg)
+                <input id="acceptance-max-wheel-error" type="number" min="0" step="0.01" placeholder="approved limit">
+              </label>
+              <label>
+                Max sync error (deg)
+                <input id="acceptance-max-sync-error" type="number" min="0" step="0.01" placeholder="approved limit">
+              </label>
+              <label>
+                Max mechanism residual (mm)
+                <input id="acceptance-max-residual" type="number" min="0" step="0.001" value="0.01">
+              </label>
+              <label class="checkbox-label">
+                <input id="acceptance-require-full-range" type="checkbox" checked>
+                Require full articulation range
+              </label>
+            </div>
+            <button id="acceptance-evaluate-button" type="button" disabled>Evaluate acceptance</button>
+            <p id="acceptance-status-note" class="curve-note">No Monroc criteria evaluated for this revision.</p>
+            <div id="acceptance-checks" class="validation-checks"></div>
+          </details>
+          <div class="sweep-validation-controls">
+            <label>
+              Joint grid step (deg)
+              <input id="sweep-validation-step" type="number" min="0.1" step="0.1" value="5" inputmode="decimal">
+            </label>
+            <button id="sweep-validation-button" type="button" disabled>Validate full range</button>
+          </div>
+          <p id="sweep-validation-status" class="curve-note">Build and solve the mechanism graph, then validate every articulation pose.</p>
+          <p class="validation-method-note">
+            The validator checks the Cartesian product of every configured joint range. The recorded sample count is the evidence boundary; it is not a continuous proof between samples.
+          </p>
+          <div class="sweep-validation-summary">
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">Sweep verdict</span>
+              <strong id="sweep-validation-verdict">NOT RUN</strong>
+            </div>
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">Solved poses</span>
+              <strong id="sweep-validation-solved">n/a</strong>
+            </div>
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">Worst clearance</span>
+              <strong id="sweep-validation-clearance">n/a</strong>
+            </div>
+            <div class="metric-card metric-card-compact">
+              <span class="metric-label">First failure</span>
+              <strong id="sweep-validation-failure">n/a</strong>
+            </div>
+          </div>
+          <div id="sweep-validation-guidance" class="validation-guidance" hidden></div>
+        </div>
+
+        <div class="metric-card" data-workflow-panel="validate">
           <span class="metric-label">Minimum clearance</span>
           <strong id="clearance-value">0.0 mm</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="validate">
           <span class="metric-label">Worst pair</span>
           <strong id="clearance-pair-value">n/a</strong>
         </div>
-        <div class="metric-card">
+        <div class="metric-card" data-workflow-panel="validate">
           <span class="metric-label">Clearance status</span>
           <strong id="clearance-status-value">Clear</strong>
         </div>
 
-        <div class="wheel-table-card">
+        <div class="wheel-table-card" data-workflow-panel="optimize">
           <div class="opt-header">
             <h3>Optimization</h3>
             <div class="opt-controls">
@@ -274,6 +652,11 @@
             </div>
           </div>
           <div class="opt-summary">
+            <div class="metric-card metric-card-compact optimization-feasibility" id="opt-feasibility-card">
+              <span class="metric-label">Engineering feasibility</span>
+              <strong id="opt-feasibility-status">NOT RUN</strong>
+              <span id="opt-feasibility-reasons" class="metric-detail">Run optimization to evaluate hard constraints.</span>
+            </div>
             <div class="metric-card metric-card-compact">
               <span class="metric-label">Baseline score</span>
               <strong id="opt-baseline-score">n/a</strong>
@@ -303,6 +686,7 @@
               <strong id="opt-run-stats">n/a</strong>
             </div>
           </div>
+          <p class="curve-note optimization-mode-note">Quick runs in the current request. Full runs through the background job queue and reports queued, running, or failed status here.</p>
           <div class="opt-objective-grid">
             <label>
               Clearance target (mm)
@@ -355,7 +739,7 @@
           <div id="opt-variable-table" class="wheel-table"></div>
         </div>
 
-        <div class="wheel-table-card">
+        <div class="wheel-table-card" data-workflow-panel="results">
           <h3>Export</h3>
           <div class="export-links">
             <a id="export-json" href="#" download="easytowing-report.json">JSON</a>
@@ -364,13 +748,65 @@
             <a id="export-png" href="#" download="easytowing-snapshot.png">PNG Snapshot</a>
             <a id="export-svg" href="#" download="easytowing-sketch.svg">SVG Sketch</a>
             <a id="export-dxf" href="#" download="easytowing-sketch.dxf">DXF</a>
+            <a id="export-release" href="#" download="easytowing-controlled-release.json" aria-disabled="true">Controlled release manifest</a>
           </div>
-          <p class="export-note">
+          <p class="export-note" id="export-note">
             Exports use the current beta and optimization mode, including a two-page PDF engineering report.
           </p>
         </div>
 
-        <div class="wheel-table-card dxf-card">
+        <div class="wheel-table-card review-results-card" data-workflow-panel="results">
+          <div class="validation-verdict-row">
+            <div>
+              <p class="card-kicker">Controlled review</p>
+              <h3>Revision approval</h3>
+              <p id="review-status-note" class="curve-note">Save a revision before submitting it for independent review.</p>
+            </div>
+            <strong id="review-state">DRAFT</strong>
+          </div>
+          <div class="project-controls review-actions">
+            <button id="review-submit-button" type="button" disabled>Submit for review</button>
+            <button id="review-approve-button" type="button" disabled>Approve revision</button>
+            <button id="review-reject-button" type="button" disabled>Reject revision</button>
+          </div>
+          <div class="review-assignment">
+            <div>
+              <p class="card-kicker">Review routing</p>
+              <label>
+                Assigned reviewer
+                <select id="reviewer-selector" aria-label="Assigned reviewer">
+                  <option value="">Unassigned</option>
+                </select>
+              </label>
+            </div>
+            <button id="reviewer-assign-button" type="button" disabled>Assign reviewer</button>
+            <p id="reviewer-assignment-status" class="curve-note">An administrator can route this revision to an independent reviewer.</p>
+          </div>
+          <div class="release-checklist">
+            <div class="validation-verdict-row">
+              <div>
+                <p class="card-kicker">Release gate</p>
+                <h3>Engineering release checklist</h3>
+              </div>
+              <strong id="release-checklist-state">BLOCKED</strong>
+            </div>
+            <div id="release-checklist" class="release-checklist-items"></div>
+            <p id="release-checklist-note" class="curve-note">A passing calculation is necessary but not sufficient for manufacturing release.</p>
+          </div>
+          <div class="approval-history">
+            <div class="validation-verdict-row">
+              <div>
+                <p class="card-kicker">Traceability</p>
+                <h3>Approval history</h3>
+              </div>
+            </div>
+            <div id="approval-history" class="approval-history-list">
+              <p class="curve-note">No approval events recorded.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="wheel-table-card dxf-card" data-workflow-panel="vehicle">
           <h3>DXF import</h3>
           <div class="dxf-controls">
             <input id="dxf-file-input" type="file" accept=".dxf,.txt" aria-label="DXF file">
@@ -380,6 +816,41 @@
           <p id="dxf-import-status" class="dxf-status">
             Choose a DXF file to parse supported entities and rebuild a rough layout preview.
           </p>
+          <div class="dxf-metadata">
+            <div>
+              <p class="card-kicker">CAD source confirmation</p>
+              <p id="dxf-metadata-status" class="curve-note">
+                Preview only until the source units and CAD axis frame are confirmed.
+              </p>
+            </div>
+            <label>
+              Source units
+              <select id="dxf-source-units" aria-label="DXF source units">
+                <option value="">Select source units</option>
+                <option value="mm">Millimetres</option>
+                <option value="cm">Centimetres</option>
+                <option value="m">Metres</option>
+                <option value="in">Inches</option>
+              </select>
+            </label>
+            <label>
+              CAD axis frame
+              <select id="dxf-coordinate-system" aria-label="DXF CAD axis frame">
+                <option value="">Select CAD axis frame</option>
+                <option value="x_forward_y_left">X forward / Y left (Monroc model frame)</option>
+                <option value="x_forward_y_right">X forward / Y right (mirror Y)</option>
+                <option value="x_rearward_y_left">X rearward / Y left (mirror X)</option>
+                <option value="x_rearward_y_right">X rearward / Y right (mirror X and Y)</option>
+              </select>
+            </label>
+            <div class="dxf-source-retention">
+              <p class="card-kicker">Revision source file</p>
+              <p id="dxf-source-retention-status" class="curve-note">
+                Save this revision before retaining the exact source bytes.
+              </p>
+              <button id="dxf-retain-source-button" type="button" disabled>Retain source on revision</button>
+            </div>
+          </div>
           <div class="dxf-summary">
             <div class="metric-card metric-card-compact">
               <span class="metric-label">Entities</span>
@@ -407,9 +878,11 @@
 
         <div class="note-card">
           <p>
-            The slider uses a provisional beta-to-radius surrogate so the ideal
-            steering math can be inspected before the full trailer articulation
-            solver exists.
+            For multi-body work, resolve the Vehicle Combination first. The slider
+            changes the selected primary articulation for the live view, while the
+            full-range validator checks every configured joint combination. The
+            explicit maneuver radius remains fixed. Legacy single-layout studies
+            remain available.
           </p>
         </div>
       </aside>
@@ -417,7 +890,7 @@
 
     <section class="control-bar">
       <label for="beta-slider">
-        Articulation proxy
+        Articulation
         <span id="beta-label">0 deg</span>
       </label>
       <input id="beta-slider" type="range" min="-45" max="45" step="1" value="0">

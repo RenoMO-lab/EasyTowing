@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-easytowing}
+      POSTGRES_USER: ${POSTGRES_USER:-easytowing}
+      POSTGRES_PASSWORD: ${EASYTOWING_DB_PASSWORD:?Set EASYTOWING_DB_PASSWORD in ops/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "easytowing.demo_server", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      EASYTOWING_DATABASE_URL: ${EASYTOWING_DATABASE_URL:?Set EASYTOWING_DATABASE_URL in ops/.env}
+      EASYTOWING_ARTIFACT_STORAGE_DIR: /var/lib/easytowing/artifacts
+      EASYTOWING_REQUIRE_ARTIFACT_STORAGE: "1"
+      EASYTOWING_REQUIRE_WORKER: "1"
+      EASYTOWING_WORKER_MAX_AGE_SECONDS: ${EASYTOWING_WORKER_MAX_AGE_SECONDS:-120}
+      EASYTOWING_BOOTSTRAP_TOKEN: ${EASYTOWING_BOOTSTRAP_TOKEN:-}
+      EASYTOWING_MONROC_ACCEPTANCE_PROFILES_JSON: ${EASYTOWING_MONROC_ACCEPTANCE_PROFILES_JSON:-}
+    volumes:
+      - artifacts:/var/lib/easytowing/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${EASYTOWING_HTTP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "easytowing.worker", "--worker-id", "${EASYTOWING_WORKER_ID:-easytowing-worker-01}"]
+    environment:
+      EASYTOWING_DATABASE_URL: ${EASYTOWING_DATABASE_URL:?Set EASYTOWING_DATABASE_URL in ops/.env}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  artifacts:
