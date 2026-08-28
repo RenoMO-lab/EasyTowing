@@ -46,6 +46,13 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("UNAPPROVED", javascript)
         self.assertIn('sweepValidationButton.disabled = !state.combinationActive || !state.mechanismGraph;', javascript)
 
+    def test_applying_optimization_preserves_authenticated_session(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn(
+            'headers: { ...authHeaders(), "Content-Type": "application/json" },',
+            javascript,
+        )
+
     def test_bootstrap_endpoint_is_first_admin_only(self) -> None:
         server = (ROOT / "easytowing" / "demo_server.py").read_text(encoding="utf-8")
         self.assertIn("SaaSBootstrapError", server)

@@ -6359,7 +6359,7 @@ async function applyOptimizedDesign() {
     const appliedLinkageConfig = serializedLinkageConfig(optimizedLinkageConfig());
     const response = await fetch(`/api/projects/${encodeURIComponent(state.currentProjectId)}/optimization`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "apply",
         beta_deg: Number(betaSlider.value),
