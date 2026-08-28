@@ -1316,6 +1316,7 @@ h1 {
 
 .metric-card strong {
   font-size: 1.2rem;
+  overflow-wrap: anywhere;
 }
 
 .wheel-table-card h3 {

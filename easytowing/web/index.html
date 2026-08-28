@@ -104,18 +104,18 @@
             <small>How this workspace works</small>
           </summary>
           <div class="workflow-brief-body">
-          <p class="workflow-brief-question"><strong>The engineering question:</strong> does this defined towing-axis mechanism steer every mapped wheel correctly and remain physically feasible across the selected articulation range?</p>
-          <ol>
+          <p id="workflow-guide-question" class="workflow-brief-question"><strong>The engineering question:</strong> does this defined towing-axis mechanism steer every mapped wheel correctly and remain physically feasible across the selected articulation range?</p>
+          <ol id="workflow-guide-steps">
             <li><strong>Define:</strong> bodies, axles, pivots, links, and wheel mappings.</li>
             <li><strong>Solve:</strong> compute the common maneuver geometry and mechanism pose.</li>
             <li><strong>Prove:</strong> check closure, steering, collision, and clearance at every pose.</li>
             <li><strong>Review:</strong> save the evidence, compare the proposal, then submit it for independent approval.</li>
           </ol>
           <div class="workflow-brief-result">
-            <strong>What the result contains</strong>
-            <p>Actual versus ideal wheel angles, mechanism residuals, collision and clearance findings, full-range evidence, and a traceable project revision.</p>
+            <strong id="workflow-guide-result-title">What the result contains</strong>
+            <p id="workflow-guide-result">Actual versus ideal wheel angles, mechanism residuals, collision and clearance findings, full-range evidence, and a traceable project revision.</p>
           </div>
-          <p class="workflow-brief-rule"><strong>PASS</strong> means the configured hard checks pass. <strong>FAIL</strong> means diagnostic evidence only, never a manufacturing release.</p>
+          <p id="workflow-guide-rule" class="workflow-brief-rule"><strong>PASS</strong> means the configured hard checks pass. <strong>FAIL</strong> means diagnostic evidence only, never a manufacturing release.</p>
           </div>
         </details>
         <div class="workflow-next-action" id="workflow-next-action">

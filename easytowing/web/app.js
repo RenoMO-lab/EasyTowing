@@ -293,6 +293,11 @@ const workflowSteps = [...document.querySelectorAll("[data-workflow-step]")];
 const workflowStepNumber = document.getElementById("workflow-step-number");
 const workflowStepTitle = document.getElementById("workflow-step-title");
 const workflowStepDescription = document.getElementById("workflow-step-description");
+const workflowGuideQuestion = document.getElementById("workflow-guide-question");
+const workflowGuideSteps = document.getElementById("workflow-guide-steps");
+const workflowGuideResultTitle = document.getElementById("workflow-guide-result-title");
+const workflowGuideResult = document.getElementById("workflow-guide-result");
+const workflowGuideRule = document.getElementById("workflow-guide-rule");
 const combinationBodyCountInput = document.getElementById("combination-body-count");
 const combinationTurnRadiusInput = document.getElementById("combination-turn-radius");
 const combinationConfig = document.getElementById("combination-config");
@@ -302,6 +307,8 @@ const combinationModeNote = document.getElementById("combination-mode-note");
 const combinationActivateButton = document.getElementById("combination-activate-button");
 const combinationCalculateButton = document.getElementById("combination-calculate-button");
 const combinationStatus = document.getElementById("combination-status");
+const legacyGeometryCard = document.querySelector(".legacy-geometry-card");
+const legacyLinkageCard = document.querySelector(".legacy-linkage-card");
 const currentValidationCard = document.getElementById("current-validation-card");
 const currentValidationStatus = document.getElementById("current-validation-status");
 const currentValidationSummary = document.getElementById("current-validation-summary");
@@ -492,6 +499,86 @@ const WORKFLOW_COPY = {
   results: ["07", "Results", "Compare the controlled proposal, apply a passing design, and generate engineering outputs."],
 };
 
+const WORKFLOW_GUIDANCE = {
+  project: {
+    question: "What study am I saving, and which revision will be reviewed?",
+    steps: [
+      "Open an existing project or create a named project.",
+      "Save a revision after every meaningful model change.",
+      "Use the dashboard to track the active revision, engineering verdict, and review gate.",
+    ],
+    resultTitle: "You are done with this step when",
+    result: "A named revision exists and the dashboard identifies the revision that will be calculated.",
+    rule: "Unsaved calculations cannot be submitted for review or treated as release evidence.",
+  },
+  vehicle: {
+    question: "What physical towing combination is being analyzed?",
+    steps: [
+      "Enter one rigid-body row per vehicle or trailer and choose each body's parent.",
+      "Add every axle and wheel position, then set each articulation stop and sweep range.",
+      "Use a confirmed CAD outline when available; otherwise the rectangular envelope is an explicit fallback.",
+    ],
+    resultTitle: "You are done with this step when",
+    result: "The body tree, axle count, wheel locations, joint stops, and packaging envelopes match the source layout.",
+    rule: "A missing body envelope or articulation stop is an incomplete physical model, not a passing assumption.",
+  },
+  maneuver: {
+    question: "What turning case should the combination be tested against?",
+    steps: [
+      "Enter the signed root turn radius for the maneuver case.",
+      "Resolve the maneuver to calculate every articulated body pose.",
+      "Inspect the ideal wheel headings before describing the mechanical solution.",
+    ],
+    resultTitle: "This calculation produces",
+    result: "The maneuver ICR, articulated body poses, and ideal steering targets used by the mechanism comparison.",
+    rule: "Positive and negative radius values represent opposite directions; keep the sign convention traceable to the test case.",
+  },
+  mechanism: {
+    question: "How does the physical hardware turn each mapped wheel?",
+    steps: [
+      "Build the component graph from fixed points, driven points, rigid members, and angle outputs.",
+      "Map every steerable wheel to the output that physically controls it, then solve the graph.",
+      "Use local body coordinates for installed components so articulation carries the mechanism correctly.",
+    ],
+    resultTitle: "This calculation produces",
+    result: "Actual wheel angles, closure residuals, branch continuity, and the physical mechanism pose for the maneuver.",
+    rule: "A visual graph is not evidence: every required wheel needs a named mapping and a successful graph solve.",
+  },
+  validate: {
+    question: "Does the current design remain physically feasible across the requested range?",
+    steps: [
+      "Review the current-pose closure, collision, clearance, and steering checks.",
+      "Run the complete Cartesian sweep for every configured articulation joint and design case.",
+      "Use the first failing pose, pair, and measured value to correct the model or mechanism.",
+    ],
+    resultTitle: "This step decides",
+    result: "A hard engineering PASS or FAIL, with the evaluated poses, residuals, clearance, collision, and steering evidence retained.",
+    rule: "PASS means every configured hard check passes. FAIL or incomplete evidence is diagnostic only and cannot authorize release.",
+  },
+  optimize: {
+    question: "Can bounded design variables improve the mechanism without violating hard constraints?",
+    steps: [
+      "Keep the validated baseline and choose only variables with approved bounds.",
+      "Run optimization as a proposal search, not as an automatic design change.",
+      "Inspect the candidate and rerun the complete validation before considering it for review.",
+    ],
+    resultTitle: "This step produces",
+    result: "A baseline-versus-candidate comparison showing variable changes, steering error, clearance, residuals, and feasibility.",
+    rule: "An optimizer candidate is never approval. An invalid or unvalidated candidate cannot be applied or exported as approved.",
+  },
+  results: {
+    question: "Is this saved revision sufficiently evidenced and approved for release?",
+    steps: [
+      "Compare ideal, actual, and error for every mapped wheel and synchronization channel.",
+      "Confirm current-pose PASS, full-range PASS, signed-off Monroc acceptance, and independent approval.",
+      "Export evidence for diagnosis; export a controlled release only when the release gate is explicitly PASS.",
+    ],
+    resultTitle: "The release decision is",
+    result: "A single decision card backed by the saved revision, full-range evidence, acceptance result, review history, and audit trail.",
+    rule: "Only engineering PASS plus full-range evidence, approved Monroc criteria, and independent reviewer approval authorizes release.",
+  },
+};
+
 function panelFor(element) {
   return element?.closest(".wheel-table-card, .metric-card, .note-card") || null;
 }
@@ -533,16 +620,38 @@ function setWorkflowStep(step) {
   workflowStepNumber.textContent = `Step ${number}`;
   workflowStepTitle.textContent = title;
   workflowStepDescription.textContent = description;
+  renderWorkflowGuide(step);
   for (const button of workflowSteps) {
     button.classList.toggle("is-active", button.dataset.workflowStep === step);
   }
   for (const panel of document.querySelectorAll("[data-workflow-panel]")) {
     panel.classList.toggle("workflow-panel-hidden", panel.dataset.workflowPanel !== step);
   }
-  if (workflowGuide && step !== "project") {
-    workflowGuide.open = false;
-  }
   renderWorkflowProgress();
+}
+
+function renderWorkflowGuide(step) {
+  const guidance = WORKFLOW_GUIDANCE[step];
+  if (!guidance || !workflowGuideQuestion || !workflowGuideSteps || !workflowGuideResultTitle || !workflowGuideResult || !workflowGuideRule) {
+    return;
+  }
+  workflowGuideQuestion.replaceChildren();
+  const questionLabel = document.createElement("strong");
+  questionLabel.textContent = "The engineering question: ";
+  workflowGuideQuestion.append(questionLabel, document.createTextNode(guidance.question));
+
+  workflowGuideSteps.replaceChildren();
+  for (const stepText of guidance.steps) {
+    const item = document.createElement("li");
+    item.textContent = stepText;
+    workflowGuideSteps.appendChild(item);
+  }
+  workflowGuideResultTitle.textContent = guidance.resultTitle;
+  workflowGuideResult.textContent = guidance.result;
+  workflowGuideRule.replaceChildren();
+  const ruleLabel = document.createElement("strong");
+  ruleLabel.textContent = "Rule: ";
+  workflowGuideRule.append(ruleLabel, document.createTextNode(guidance.rule));
 }
 
 function isLegacyRevisionMode() {
@@ -606,6 +715,8 @@ function nextWorkflowAction() {
       title: "Open or create the project",
       detail: "Start with a named project so every calculation and review decision is saved as a revision.",
       button: "Go to Project",
+      action: "create-project",
+      activeButton: "Start setup",
     };
   }
   if (legacyRevision) {
@@ -614,6 +725,8 @@ function nextWorkflowAction() {
       title: "Switch this revision to multi-body workflow",
       detail: "This saved revision is the legacy single-layout study. Activate the explicit towing-combination model before continuing.",
       button: "Use multi-body workflow",
+      action: "activate-combination",
+      activeButton: "Start multi-body setup",
     };
   }
   if (!hasVehicle) {
@@ -622,6 +735,8 @@ function nextWorkflowAction() {
       title: "Define the towing combination",
       detail: "Enter every body, axle, wheel envelope, articulation joint, and physical joint stop.",
       button: "Go to Vehicle",
+      action: "open-vehicle",
+      activeButton: "Review vehicle inputs",
     };
   }
   if (!hasManeuver) {
@@ -630,6 +745,8 @@ function nextWorkflowAction() {
       title: "Resolve the maneuver",
       detail: "Set the signed root turn radius and calculate the current articulated pose.",
       button: "Go to Maneuver",
+      action: "resolve-maneuver",
+      activeButton: "Resolve maneuver",
     };
   }
   if (!hasMechanism) {
@@ -640,6 +757,8 @@ function nextWorkflowAction() {
         ? "Create the rigid links, driver arcs, outputs, and named wheel mappings, then solve them."
         : "Define the physical linkage dimensions and apply the configuration before validation.",
       button: "Go to Mechanism",
+      action: "build-mechanism",
+      activeButton: "Build graph",
     };
   }
   if (!hasSolvedMechanism) {
@@ -648,6 +767,8 @@ function nextWorkflowAction() {
       title: "Solve the mechanism graph",
       detail: "The maneuver is resolved. Solve the configured mechanism to generate current-pose engineering evidence.",
       button: "Go to Mechanism",
+      action: "solve-mechanism",
+      activeButton: "Solve mechanism",
     };
   }
   if (!state.currentValidationPass) {
@@ -656,6 +777,8 @@ function nextWorkflowAction() {
       title: "Resolve current-pose failures",
       detail: "Review the failed hard check and its engineering guidance before running the full range.",
       button: "Go to Validate",
+      action: "open-validate",
+      activeButton: "Review validation",
     };
   }
   if (!hasFullRange) {
@@ -664,6 +787,8 @@ function nextWorkflowAction() {
       title: "Run the full articulation validation",
       detail: "Check every configured Cartesian combination of joint angles. A partial sweep cannot support approval.",
       button: "Go to Validate",
+      action: "run-sweep",
+      activeButton: "Run full-range validation",
     };
   }
   return {
@@ -673,7 +798,37 @@ function nextWorkflowAction() {
       ? "Save this revision before submitting it for independent review or controlled release."
       : "Compare actual versus ideal steering, inspect clearance, and use Optimize only for a feasible proposal.",
     button: "Go to Results",
+    action: state.workspaceDirty ? "save-revision" : "open-results",
+    activeButton: state.workspaceDirty ? "Save revision" : "Review results",
   };
+}
+
+function runWorkflowNextAction(action) {
+  switch (action) {
+    case "create-project":
+      projectStartButton.click();
+      return;
+    case "activate-combination":
+      combinationActivateButton.click();
+      return;
+    case "resolve-maneuver":
+      combinationCalculateButton.click();
+      return;
+    case "build-mechanism":
+      mechanismGraphBuildButton.click();
+      return;
+    case "solve-mechanism":
+      mechanismGraphSolveButton.click();
+      return;
+    case "run-sweep":
+      sweepValidationButton.click();
+      return;
+    case "save-revision":
+      projectSaveButton.click();
+      return;
+    default:
+      setWorkflowStep(workflowNextButton.dataset.workflowTarget || "project");
+  }
 }
 
 function renderWorkflowProgress() {
@@ -688,8 +843,10 @@ function renderWorkflowProgress() {
   if (workflowNextTitle && workflowNextDetail && workflowNextButton) {
     workflowNextTitle.textContent = next.title;
     workflowNextDetail.textContent = next.detail;
-    workflowNextButton.textContent = next.button;
+    const actionIsAvailable = state.activeWorkflowStep === next.step;
+    workflowNextButton.textContent = actionIsAvailable ? (next.activeButton || next.button) : next.button;
     workflowNextButton.dataset.workflowTarget = next.step;
+    workflowNextButton.dataset.workflowAction = actionIsAvailable ? (next.action || "") : "";
   }
   renderProjectStartCard(next);
   renderProjectDashboardStatus();
@@ -3346,6 +3503,12 @@ function resizeCombinationAxles(bodyIndex, count) {
 
 function renderCombinationConfig() {
   const active = state.combinationActive;
+  if (legacyGeometryCard) {
+    legacyGeometryCard.hidden = active;
+  }
+  if (legacyLinkageCard) {
+    legacyLinkageCard.hidden = active;
+  }
   if (combinationFields) {
     combinationFields.hidden = !active;
   }
@@ -6394,6 +6557,11 @@ for (const workflowStep of workflowSteps) {
 workflowNextButton.addEventListener("click", () => {
   if (isLegacyRevisionMode()) {
     combinationActivateButton.click();
+    return;
+  }
+  const action = workflowNextButton.dataset.workflowAction;
+  if (action) {
+    runWorkflowNextAction(action);
     return;
   }
   setWorkflowStep(workflowNextButton.dataset.workflowTarget || "project");

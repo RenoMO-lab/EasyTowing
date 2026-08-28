@@ -80,6 +80,33 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("function renderWorkflowProgress", javascript)
         self.assertIn("workflowStepStates", javascript)
         self.assertIn("button.dataset.workflowState = status", javascript)
+
+    def test_each_workflow_step_explains_inputs_outputs_and_release_rule(self) -> None:
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="workflow-guide-question"', html)
+        self.assertIn('id="workflow-guide-steps"', html)
+        self.assertIn('id="workflow-guide-result"', html)
+        self.assertIn("const WORKFLOW_GUIDANCE", javascript)
+        self.assertIn("What physical towing combination is being analyzed?", javascript)
+        self.assertIn("function renderWorkflowGuide(step)", javascript)
+        self.assertNotIn("workflowGuide.open = false", javascript)
+
+    def test_next_action_button_executes_the_current_step_operation(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('action: "resolve-maneuver"', javascript)
+        self.assertIn('activeButton: "Resolve maneuver"', javascript)
+        self.assertIn("function runWorkflowNextAction(action)", javascript)
+        self.assertIn('workflowNextButton.dataset.workflowAction = actionIsAvailable', javascript)
+        self.assertIn("runWorkflowNextAction(action);", javascript)
+
+    def test_legacy_controls_are_hidden_when_multi_body_mode_is_active(self) -> None:
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('class="wheel-table-card geometry-card legacy-geometry-card"', html)
+        self.assertIn('class="wheel-table-card linkage-card legacy-linkage-card"', html)
+        self.assertIn("legacyGeometryCard.hidden = active", javascript)
+        self.assertIn("legacyLinkageCard.hidden = active", javascript)
         self.assertIn('results: legacyRevision ? "WAIT" : resultState', javascript)
         self.assertIn('"INCOMPLETE"', javascript)
 
@@ -161,6 +188,8 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("@media (max-width: 600px)", styles)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", styles)
         self.assertIn("overflow: visible;", styles)
+        self.assertIn(".metric-card strong", styles)
+        self.assertIn("overflow-wrap: anywhere;", styles)
 
     def test_multi_body_outline_input_has_an_explicit_rectangular_fallback(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
