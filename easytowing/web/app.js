@@ -44,6 +44,8 @@ const state = {
       bodyPolygon: [],
       bodyPolygonText: "",
       bodyPolygonError: null,
+      parentBodyId: null,
+      parentJointId: null,
       articulationDeg: 0,
       articulationMinDeg: -45,
       articulationMaxDeg: 45,
@@ -63,6 +65,8 @@ const state = {
       bodyPolygon: [],
       bodyPolygonText: "",
       bodyPolygonError: null,
+      parentBodyId: "body_1",
+      parentJointId: "joint_2",
       articulationDeg: 0,
       articulationMinDeg: -45,
       articulationMaxDeg: 45,
@@ -3268,6 +3272,7 @@ function newCombinationBody(index) {
     bodyPolygon: [],
     bodyPolygonText: "",
     bodyPolygonError: null,
+    parentBodyId: index === 0 ? null : (state.combinationBodies[index - 1]?.id || `body_${index}`),
     parentJointId: index === 0 ? null : `joint_${index + 1}`,
     articulationDeg: 0,
     articulationMinDeg: -45,
@@ -3302,6 +3307,17 @@ function resizeCombinationBodies(count) {
     state.combinationBodies.push(newCombinationBody(state.combinationBodies.length));
   }
   state.combinationBodies.length = normalized;
+  const bodyIds = new Set(state.combinationBodies.map((body) => body.id));
+  state.combinationBodies.forEach((body, index) => {
+    if (index === 0) {
+      body.parentBodyId = null;
+      return;
+    }
+    const priorIds = new Set(state.combinationBodies.slice(0, index).map((candidate) => candidate.id));
+    if (!body.parentBodyId || !bodyIds.has(body.parentBodyId) || !priorIds.has(body.parentBodyId)) {
+      body.parentBodyId = state.combinationBodies[index - 1].id;
+    }
+  });
   combinationBodyCountInput.value = String(normalized);
   renderCombinationConfig();
 }
@@ -3339,7 +3355,7 @@ function renderCombinationConfig() {
   }
   if (combinationModeNote) {
     combinationModeNote.textContent = active
-      ? "Define every rigid body, articulation joint, and mounted axle. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Continue to Maneuver when the physical combination is complete."
+      ? "Define every rigid body, its parent connection, articulation joint, and mounted axle. A parent may have multiple connected child bodies for branched towing assemblies. Set each physical articulation stop before choosing its sweep range; a range outside the stop is a hard FAIL. Length and width are rectangular safety envelopes unless a CAD-derived outline is supplied. Continue to Maneuver when the physical combination is complete."
       : "This revision uses the legacy single-layout study. Its two-body template is hidden so it cannot be mistaken for saved engineering input. Activate the multi-body workflow to create a new articulated model from the template.";
   }
   if (combinationActivateButton) {
@@ -3353,7 +3369,12 @@ function renderCombinationConfig() {
     const header = document.createElement("summary");
     header.className = "combination-body-header";
     const title = document.createElement("strong");
-    title.textContent = bodyIndex === 0 ? `${body.name} / root` : `${body.name} / child ${bodyIndex}`;
+    const parentBody = bodyIndex === 0
+      ? null
+      : state.combinationBodies.find((candidate) => candidate.id === body.parentBodyId);
+    title.textContent = bodyIndex === 0
+      ? `${body.name} / root`
+      : `${body.name} / connected to ${parentBody?.name || "unassigned parent"}`;
     const summary = document.createElement("small");
     summary.textContent = `${body.axles.length} axle${body.axles.length === 1 ? "" : "s"} / ${body.bodyPolygon.length >= 3 ? "CAD outline" : "rectangular envelope"}${bodyIndex === 0 ? "" : ` / current ${Number(body.articulationDeg).toFixed(1)} deg / sweep ${Number(body.articulationMinDeg).toFixed(0)}..${Number(body.articulationMaxDeg).toFixed(0)} deg / stop +/-${Number(body.articulationLimitDeg).toFixed(0)} deg`}`;
     header.append(title, summary);
@@ -3367,7 +3388,33 @@ function renderCombinationConfig() {
       makeCombinationField("Width mm", body.widthMm, (value) => { body.widthMm = value; }, { min: 1, step: 10 }),
     );
     if (bodyIndex > 0) {
+      const parentLabel = document.createElement("label");
+      parentLabel.textContent = "Parent body";
+      const parentSelect = document.createElement("select");
+      state.combinationBodies.slice(0, bodyIndex).forEach((candidate) => {
+        const option = document.createElement("option");
+        option.value = candidate.id;
+        option.textContent = `${candidate.name} (${candidate.id})`;
+        parentSelect.appendChild(option);
+      });
+      const selectedParentId = body.parentBodyId || state.combinationBodies[bodyIndex - 1]?.id;
+      if (selectedParentId && !state.combinationBodies.slice(0, bodyIndex).some((candidate) => candidate.id === selectedParentId)) {
+        const option = document.createElement("option");
+        option.value = selectedParentId;
+        option.textContent = `Unknown parent (${selectedParentId})`;
+        parentSelect.appendChild(option);
+      }
+      parentSelect.value = selectedParentId || "";
+      parentSelect.addEventListener("change", () => {
+        body.parentBodyId = parentSelect.value || null;
+        markWorkspaceDirty("Body connection changed. Rebuild the mechanism and save a new revision before review.", {
+          invalidateMechanism: true,
+        });
+        renderCombinationConfig();
+      });
+      parentLabel.appendChild(parentSelect);
       fields.append(
+        parentLabel,
         makeCombinationField("Articulation deg", body.articulationDeg, (value) => { body.articulationDeg = value; }, { step: 0.5 }),
         makeCombinationField("Physical limit +/- deg", body.articulationLimitDeg, (value) => { body.articulationLimitDeg = value; }, { min: 0, step: 0.5 }),
         makeCombinationField("Sweep min deg", body.articulationMinDeg, (value) => {
@@ -3542,6 +3589,28 @@ function serializedCombination() {
   if (invalidOutline) {
     throw new Error(`${invalidOutline.name} has an invalid CAD outline: ${invalidOutline.bodyPolygonError}`);
   }
+  if (!state.combinationBodies.length) {
+    throw new Error("A towing combination requires at least one body.");
+  }
+  const bodyIds = new Set(state.combinationBodies.map((body) => body.id));
+  const parentBodyById = new Map();
+  state.combinationBodies.forEach((body, index) => {
+    if (index === 0) {
+      parentBodyById.set(body.id, null);
+      return;
+    }
+    const parentBodyId = body.parentBodyId || state.combinationBodies[index - 1]?.id;
+    const priorIds = new Set(state.combinationBodies.slice(0, index).map((candidate) => candidate.id));
+    if (!parentBodyId || !bodyIds.has(parentBodyId) || !priorIds.has(parentBodyId) || parentBodyId === body.id) {
+      throw new Error(`${body.name} must connect to a valid earlier parent body.`);
+    }
+    parentBodyById.set(body.id, parentBodyId);
+  });
+  const jointIdByBodyId = new Map(
+    state.combinationBodies
+      .filter((body, index) => index > 0)
+      .map((body, index) => [body.id, body.parentJointId || `joint_${index + 2}`]),
+  );
   const bodies = state.combinationBodies.map((body, index) => ({
     id: body.id,
     name: body.name,
@@ -3549,14 +3618,14 @@ function serializedCombination() {
     body_length_mm: Number(body.lengthMm),
     body_width_mm: Number(body.widthMm),
     body_polygon: Array.isArray(body.bodyPolygon) ? body.bodyPolygon : [],
-    parent_joint_id: index === 0 ? null : (body.parentJointId || `joint_${index + 1}`),
-    child_joint_ids: index === state.combinationBodies.length - 1
-      ? []
-      : [state.combinationBodies[index + 1].parentJointId || `joint_${index + 2}`],
+    parent_joint_id: index === 0 ? null : jointIdByBodyId.get(body.id),
+    child_joint_ids: state.combinationBodies
+      .filter((candidate) => parentBodyById.get(candidate.id) === body.id)
+      .map((candidate) => jointIdByBodyId.get(candidate.id)),
   }));
   const joints = state.combinationBodies.slice(1).map((body, index) => ({
-    id: body.parentJointId || `joint_${index + 2}`,
-    parent_body_id: state.combinationBodies[index].id,
+    id: jointIdByBodyId.get(body.id),
+    parent_body_id: parentBodyById.get(body.id),
     child_body_id: body.id,
     parent_anchor: { x_mm: Number(body.parentAnchorXmm), y_mm: Number(body.parentAnchorYmm) },
     child_anchor: { x_mm: Number(body.childAnchorXmm), y_mm: Number(body.childAnchorYmm) },
@@ -3565,7 +3634,7 @@ function serializedCombination() {
   }));
   const jointRanges = Object.fromEntries(
     state.combinationBodies.slice(1).map((body, index) => {
-      const jointId = body.parentJointId || `joint_${index + 2}`;
+      const jointId = jointIdByBodyId.get(body.id);
       return [jointId, {
         min_deg: Number(body.articulationMinDeg),
         max_deg: Number(body.articulationMaxDeg),
@@ -3630,23 +3699,60 @@ function restoreCombinationConfiguration(config) {
     throw new Error("Stored combination has no root body.");
   }
 
-  const bodyById = new Map(rawBodies.map((body) => [body.id, body]));
-  const childJointByParent = new Map(rawJoints.map((joint) => [joint.parent_body_id, joint]));
-  const parentJointByChild = new Map(rawJoints.map((joint) => [joint.child_body_id, joint]));
+  const bodyIds = rawBodies.map((body) => String(body?.id || ""));
+  if (bodyIds.some((bodyId) => !bodyId) || new Set(bodyIds).size !== bodyIds.length) {
+    throw new Error("Stored combination body IDs must be present and unique.");
+  }
+  const bodyById = new Map(rawBodies.map((body, index) => [bodyIds[index], body]));
+  const bodyOrder = new Map(bodyIds.map((bodyId, index) => [bodyId, index]));
+  const parentJointByChild = new Map();
+  const childJointsByParent = new Map();
+  rawJoints.forEach((joint) => {
+    const parentId = String(joint?.parent_body_id || "");
+    const childId = String(joint?.child_body_id || "");
+    if (!bodyById.has(parentId) || !bodyById.has(childId)) {
+      throw new Error(`Stored joint references an unknown body: ${parentId} -> ${childId}.`);
+    }
+    if (parentId === childId || parentJointByChild.has(childId)) {
+      throw new Error(`Stored combination has an invalid or duplicate parent for ${childId}.`);
+    }
+    parentJointByChild.set(childId, joint);
+    const children = childJointsByParent.get(parentId) || [];
+    children.push(joint);
+    childJointsByParent.set(parentId, children);
+  });
+  if (!bodyById.has(String(config.root_body_id))) {
+    throw new Error(`Stored combination references missing root body ${config.root_body_id}.`);
+  }
+  if (parentJointByChild.has(String(config.root_body_id))) {
+    throw new Error("Stored combination root body cannot have a parent joint.");
+  }
   const orderedBodies = [];
   const visited = new Set();
-  let bodyId = config.root_body_id;
-  while (bodyId && !visited.has(bodyId)) {
+  const visiting = new Set();
+  const visitBody = (bodyId) => {
+    if (visiting.has(bodyId)) {
+      throw new Error("Stored combination contains a body connection cycle.");
+    }
+    if (visited.has(bodyId)) {
+      return;
+    }
     const body = bodyById.get(bodyId);
     if (!body) {
       throw new Error(`Stored combination references missing body ${bodyId}.`);
     }
+    visiting.add(bodyId);
     visited.add(bodyId);
     orderedBodies.push(body);
-    bodyId = childJointByParent.get(bodyId)?.child_body_id || null;
-  }
+    const children = (childJointsByParent.get(bodyId) || [])
+      .slice()
+      .sort((left, right) => bodyOrder.get(String(left.child_body_id)) - bodyOrder.get(String(right.child_body_id)));
+    children.forEach((joint) => visitBody(String(joint.child_body_id)));
+    visiting.delete(bodyId);
+  };
+  visitBody(String(config.root_body_id));
   if (orderedBodies.length !== rawBodies.length) {
-    throw new Error("Stored combination must be one connected body chain.");
+    throw new Error("Stored combination contains a disconnected body or missing parent joint.");
   }
 
   state.combinationId = String(config.id || "workspace_combination");
@@ -3663,15 +3769,16 @@ function restoreCombinationConfiguration(config) {
     phaseOffsetDeg: Number(sync.phase_offset_deg ?? ((Number(sync.phase_offset_rad) || 0) * 180 / Math.PI)),
   }));
   state.combinationBodies = orderedBodies.map((body, index) => {
-    const parentJoint = parentJointByChild.get(body.id);
+    const bodyId = String(body.id);
+    const parentJoint = parentJointByChild.get(bodyId);
     const jointRange = parentJoint ? storedJointRange(config, parentJoint.id) : null;
     const axles = rawMountedAxles
-      .filter((mounted) => mounted.body_id === body.id)
+      .filter((mounted) => String(mounted.body_id || "") === bodyId)
       .map((mounted, axleIndex) => {
         const axle = mounted.axle || mounted;
         const center = mounted.local_center || {};
         return {
-          id: String(axle.id || axle.axle_id || `${body.id}_axle_${axleIndex + 1}`),
+          id: String(axle.id || axle.axle_id || `${bodyId}_axle_${axleIndex + 1}`),
           xMm: Number(center.x_mm || 0),
           yMm: Number(center.y_mm || 0),
           trackMm: Number(axle.track_mm || 2500),
@@ -3685,13 +3792,14 @@ function restoreCombinationConfiguration(config) {
         };
       });
     return {
-      id: String(body.id),
+      id: bodyId,
       name: String(body.name || `Body ${index + 1}`),
       lengthMm: Number(body.body_length_mm || 1800),
       widthMm: Number(body.body_width_mm || 3200),
       bodyPolygon: Array.isArray(body.body_polygon) ? body.body_polygon : [],
       bodyPolygonText: bodyPolygonText(body.body_polygon),
       bodyPolygonError: null,
+      parentBodyId: index === 0 ? null : String(parentJoint?.parent_body_id || ""),
       parentJointId: index === 0 ? null : String(parentJoint?.id || `joint_${index + 1}`),
       articulationDeg: Number(parentJoint?.articulation_deg || 0),
       articulationLimitDeg: Number(parentJoint?.maximum_articulation_deg ?? 45),
@@ -3704,7 +3812,7 @@ function restoreCombinationConfiguration(config) {
       articulationStepDeg: Number(jointRange?.step_deg ?? 5),
       axles: axles.length > 0
         ? axles
-        : [{ id: `${body.id}_axle_1`, xMm: 0, yMm: 0, trackMm: 2500, mode: "FIXED", wheelCount: 2, maximumSteeringAngleDeg: null, steeringStopDeg: null, tireWidthMm: 0, outsideDiameterMm: 0 }],
+        : [{ id: `${bodyId}_axle_1`, xMm: 0, yMm: 0, trackMm: 2500, mode: "FIXED", wheelCount: 2, maximumSteeringAngleDeg: null, steeringStopDeg: null, tireWidthMm: 0, outsideDiameterMm: 0 }],
     };
   });
   if (state.combinationSynchronizations.length === 0
@@ -3723,7 +3831,7 @@ function restoreCombinationConfiguration(config) {
       }];
     }
   }
-  const primaryJointRange = state.combinationBodies[1];
+  const primaryJointRange = primaryCombinationBody();
   if (primaryJointRange
       && Number.isFinite(Number(primaryJointRange.articulationMinDeg))
       && Number.isFinite(Number(primaryJointRange.articulationMaxDeg))
@@ -3735,6 +3843,16 @@ function restoreCombinationConfiguration(config) {
   }
   combinationBodyCountInput.value = String(state.combinationBodies.length);
   renderCombinationConfig();
+}
+
+function primaryCombinationBody() {
+  return state.combinationBodies.find((body, index) => index > 0 && body.parentJointId)
+    || state.combinationBodies[1]
+    || null;
+}
+
+function primaryCombinationJointId() {
+  return primaryCombinationBody()?.parentJointId || "joint_2";
 }
 
 function projectCombinationPayload() {
@@ -3750,7 +3868,7 @@ function projectCombinationPayload() {
     beta_min_deg: state.betaRange.minDeg,
     beta_max_deg: state.betaRange.maxDeg,
     primary_joint_id: state.combinationBodies.length > 1
-      ? (state.combinationBodies[1].parentJointId || "joint_2")
+      ? primaryCombinationJointId()
       : undefined,
     sweep_step_deg: Number(sweepValidationStepInput.value),
     clearance_target_mm: Number(state.optimizationSettings.clearanceTargetMm),
@@ -3781,7 +3899,7 @@ function buildMechanismGraphFromCombination() {
   const angleOutputs = [];
   const drivers = [];
   const assignments = [];
-  const primaryJointId = state.combinationBodies[1]?.parentJointId || "joint_2";
+  const primaryJointId = primaryCombinationJointId();
   const pointAt = (pivotX, pivotY, angleDeg, lengthMm) => ({
     x: pivotX + Math.cos(angleDeg * Math.PI / 180) * lengthMm,
     y: pivotY + Math.sin(angleDeg * Math.PI / 180) * lengthMm,
@@ -4506,14 +4624,15 @@ async function solveMechanismGraphDesign() {
 }
 
 async function calculateCombinationStudy(betaOverride = null) {
-  if (betaOverride !== null && state.combinationBodies.length > 1) {
-    state.combinationBodies[1].articulationDeg = Number(betaOverride);
+  const primaryBody = primaryCombinationBody();
+  if (betaOverride !== null && primaryBody) {
+    primaryBody.articulationDeg = Number(betaOverride);
   }
   const radius = Number(combinationTurnRadiusInput.value);
   if (!Number.isFinite(radius) || Math.abs(radius) < 1e-9) {
     throw new Error("Signed root radius must be a non-zero finite number.");
   }
-  const betaDeg = state.combinationBodies[1]?.articulationDeg || 0;
+  const betaDeg = primaryBody?.articulationDeg || 0;
   combinationCalculateButton.disabled = true;
   combinationStatus.textContent = "Resolving body poses, rolling constraints, and steering angles...";
   try {

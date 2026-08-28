@@ -126,6 +126,15 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("combinationActive: true", javascript)
         self.assertIn("legacy revision still switches this back to false", javascript)
 
+    def test_combination_editor_preserves_body_tree_connections(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('parentLabel.textContent = "Parent body"', javascript)
+        self.assertIn("parentBodyId", javascript)
+        self.assertIn("childJointsByParent", javascript)
+        self.assertIn("Stored combination contains a body connection cycle.", javascript)
+        self.assertIn("Stored combination contains a disconnected body or missing parent joint.", javascript)
+        self.assertIn("function primaryCombinationJointId", javascript)
+
     def test_legacy_revision_mode_is_explicit_before_multi_body_activation(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
