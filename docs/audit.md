@@ -156,6 +156,10 @@ so a physical-feasibility PASS alone is never a release authorization.
   clean API/worker logs, HTTP health 200, and dependency readiness 200. Schema
   startup is serialized with a PostgreSQL advisory lock so API and worker
   startup cannot race their first migration.
+- An isolated live Compose run also bootstrapped an administrator, authenticated
+  against PostgreSQL, completed a queued optimization through the separate
+  worker at 100%, and restored a `pg_dump` into a fresh database. The restored
+  database retained the organization, user, job result, and five audit events.
 - Deployment bootstrap now creates only the first administrator and ignores
   caller-supplied roles; repeated or concurrent bootstrap attempts are rejected
   after the deployment has any user. PostgreSQL worker claims carry unique lease

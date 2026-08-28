@@ -53,6 +53,13 @@ at a controlled ingress, use a managed secret store, configure external
 object storage, and supervise/monitor the services according to the Monroc
 IT operating standard.
 
+The deployment slice has been exercised with an isolated Compose project:
+PostgreSQL readiness reached HTTP 200 after the worker heartbeat, an
+authenticated optimization job completed and persisted at 100%, and a custom
+format `pg_dump` restored successfully into a fresh database with the control
+plane and audit rows present. This validates the local deployment path, not
+production supervision or disaster-recovery readiness.
+
 The PostgreSQL schema also enforces tenant ownership at the database boundary:
 user sessions, project revisions, memberships, approvals, jobs, artifacts, and
 audit actors use composite foreign keys containing `organization_id`. The
