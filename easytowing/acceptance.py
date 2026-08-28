@@ -50,13 +50,19 @@ class MonrocAcceptanceCriteria:
         missing = [name for name in required if name not in raw]
         if missing:
             raise ValueError(f"Acceptance criteria missing required fields: {', '.join(missing)}.")
+        case_id = raw["case_id"]
+        if not isinstance(case_id, str):
+            raise ValueError("Acceptance criteria case_id must be a string.")
+        require_full_range = raw.get("require_full_range", True)
+        if not isinstance(require_full_range, bool):
+            raise ValueError("Acceptance criterion require_full_range must be a JSON boolean.")
         return cls(
-            case_id=str(raw["case_id"]),
+            case_id=case_id,
             minimum_clearance_mm=float(raw["minimum_clearance_mm"]),
             maximum_wheel_error_deg=float(raw["maximum_wheel_error_deg"]),
             maximum_synchronization_error_deg=float(raw["maximum_synchronization_error_deg"]),
             maximum_mechanism_residual_mm=float(raw.get("maximum_mechanism_residual_mm", 0.01)),
-            require_full_range=bool(raw.get("require_full_range", True)),
+            require_full_range=require_full_range,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -307,7 +313,7 @@ def evaluate_monroc_acceptance(
         sweep_pass = (
             sweep_mapping is not None
             and sweep_mapping.get("status") == "PASS"
-            and sweep_mapping.get("sampling_complete", True) is not False
+            and sweep_mapping.get("sampling_complete") is True
             and _finite_number(sweep_mapping.get("sample_count")) is not None
             and _finite_number(sweep_mapping.get("solved_sample_count"))
             == _finite_number(sweep_mapping.get("sample_count"))

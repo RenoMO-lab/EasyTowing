@@ -15,6 +15,7 @@ def passing_snapshot() -> dict[str, object]:
         "clearance": {"collision_detected": False, "minimum_clearance_mm": 28.0},
         "sweep_validation": {
             "status": "PASS",
+            "sampling_complete": True,
             "sample_count": 3,
             "solved_sample_count": 3,
             "minimum_clearance_mm": 24.0,
@@ -93,6 +94,16 @@ class AcceptanceTests(unittest.TestCase):
                 maximum_wheel_error_deg=2.0,
                 maximum_synchronization_error_deg=1.0,
             )
+
+    def test_criteria_reject_non_boolean_full_range_flag(self) -> None:
+        with self.assertRaisesRegex(ValueError, "JSON boolean"):
+            MonrocAcceptanceCriteria.from_dict({
+                "case_id": "MONROC-04",
+                "minimum_clearance_mm": 20.0,
+                "maximum_wheel_error_deg": 2.0,
+                "maximum_synchronization_error_deg": 1.0,
+                "require_full_range": "false",
+            })
 
 
 if __name__ == "__main__":

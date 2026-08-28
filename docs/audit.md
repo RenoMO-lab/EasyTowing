@@ -207,6 +207,10 @@ so a physical-feasibility PASS alone is never a release authorization.
   entered limits remain `UNAPPROVED` and cannot authorize release.
 - No real Monroc CAD dataset, trusted manual calculation, or approved design
   threshold is checked in as an acceptance fixture.
+- The repository now includes an executable, fail-closed pilot package
+  validator. It requires those external artifacts and compares the saved
+  result against both hand-calculation and approved-reference metrics, but it
+  intentionally has no customer case data and cannot authorize release.
 
 ## Observed user-flow problem
 

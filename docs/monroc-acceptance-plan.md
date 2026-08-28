@@ -66,6 +66,30 @@ the approved Monroc catalogue.
 7. Record discrepancies, corrective actions, and final disposition in the
    project revision and audit history.
 
+## Executable pilot package
+
+Once Monroc supplies a case, create a JSON manifest using schema version `1`
+with these fields:
+
+- `case_id` and explicit `criteria` values approved for that case.
+- `cad_source.path`, `cad_source.sha256`, and the frozen CAD `revision`.
+- `engineering_snapshot.path` and its SHA-256, taken from the saved revision.
+- `comparisons` containing both `hand_calculation` and `approved_reference`.
+  Each comparison is a hashed JSON artifact with expected values and explicit
+  non-negative tolerances for all four pilot metrics.
+
+Run the package validator from the repository root:
+
+```powershell
+python -m easytowing.pilot .\pilot-cases\MONROC-01.json
+```
+
+The validator returns `PASS`, `FAIL`, or `INVALID_PACKAGE`, reports the
+artifact hashes and metric deltas, and always reports
+`release_authority: none`. A pilot PASS proves agreement with the supplied
+case evidence; it does not bypass the protected acceptance profile,
+independent review, or controlled release gate.
+
 ## Approval record
 
 Before this plan becomes a release policy, record:
