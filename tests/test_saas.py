@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from pathlib import Path
 import tempfile
 import time
@@ -16,11 +17,32 @@ from easytowing.saas import (
     JobStatus,
     PostgreSQLJobWorker,
     Principal,
+    S3ArtifactStore,
     SaaSAuthorizationError,
     SaaSBootstrapError,
     SaaSControlStore,
     UserRole,
 )
+
+
+class FakeS3Client:
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+        self.put_requests: list[dict[str, object]] = []
+        self.head_requests: list[str] = []
+
+    def put_object(self, **request: object) -> None:
+        self.put_requests.append(request)
+        self.objects[(str(request["Bucket"]), str(request["Key"]))] = bytes(request["Body"])  # type: ignore[arg-type]
+
+    def get_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
+        return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
+
+    def delete_object(self, *, Bucket: str, Key: str) -> None:
+        self.objects.pop((Bucket, Key), None)
+
+    def head_bucket(self, *, Bucket: str) -> None:
+        self.head_requests.append(Bucket)
 
 
 class FakePostgreSQLWorkerStore:
@@ -303,6 +325,47 @@ class SaaSControlTests(unittest.TestCase):
             store.delete("artifact_filesystem_1")
             with self.assertRaises(ArtifactStorageError):
                 store.read("artifact_filesystem_1")
+
+    def test_s3_artifact_store_retains_encrypted_and_verified_bytes(self) -> None:
+        content = b"controlled release bytes in object storage\n"
+        digest = hashlib.sha256(content).hexdigest()
+        client = FakeS3Client()
+        store = S3ArtifactStore(
+            "monroc-artifacts",
+            prefix="tenant-a/releases",
+            server_side_encryption="aws:kms",
+            kms_key_id="alias/monroc-engineering",
+            client=client,
+        )
+
+        key = store.put(
+            "artifact_s3_1",
+            content,
+            expected_sha256=digest,
+            expected_size=len(content),
+        )
+
+        self.assertEqual(key, "tenant-a/releases/artifact_s3_1")
+        self.assertEqual(client.put_requests[0]["ServerSideEncryption"], "aws:kms")
+        self.assertEqual(client.put_requests[0]["SSEKMSKeyId"], "alias/monroc-engineering")
+        store.health_check()
+        self.assertEqual(client.head_requests, ["monroc-artifacts"])
+        self.assertEqual(
+            store.read(
+                "artifact_s3_1",
+                expected_sha256=digest,
+                expected_size=len(content),
+            ),
+            content,
+        )
+        with self.assertRaises(ArtifactStorageError):
+            store.read("artifact_s3_1", expected_sha256="0" * 64)
+        with self.assertRaises(ValueError):
+            store.put("../outside", content)
+
+        store.delete("artifact_s3_1")
+        with self.assertRaises(ArtifactStorageError):
+            store.read("artifact_s3_1")
 
 
 if __name__ == "__main__":

@@ -306,6 +306,7 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn('"ARTIFACT_NOT_RETAINED"', server)
         self.assertIn("len(parts) == 7", server)
         self.assertIn("class FileArtifactStore", saas)
+        self.assertIn("class S3ArtifactStore", saas)
         self.assertIn("expected_sha256", saas)
 
     def test_revision_scoped_cad_source_retention_contract_is_exposed(self) -> None:
@@ -316,7 +317,8 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn('id="dxf-source-retention-status"', html)
         self.assertIn("async function retainDxfSource", javascript)
         self.assertIn("/cad-source`", javascript)
-        self.assertIn("artifactStorageBackend !== \"filesystem\"", javascript)
+        self.assertIn('artifactStorageBackend,', javascript)
+        self.assertIn('"response-only", "unavailable"', javascript)
         self.assertIn('"cad-source-dxf"', server)
         self.assertIn("reconstructed_vehicle?.cad_source", javascript)
         self.assertIn("CAD_SOURCE_MISMATCH", server)

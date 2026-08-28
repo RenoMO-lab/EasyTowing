@@ -19,6 +19,7 @@ easytowing-worker = "easytowing.worker:main"
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2"]
+object-storage = ["boto3>=1.35"]
 
 [tool.setuptools]
 include-package-data = true

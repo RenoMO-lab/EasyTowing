@@ -81,9 +81,11 @@ The production boundary should be split into:
 - Visualization/export: SVG/Canvas previews and controlled engineering output.
 
 The current repository wires the live demo server to PostgreSQL when configured
-and provides a separate durable worker command for engineering jobs, but does
-not provide production process supervision, object-storage deployment, or
-managed identity integration.
+and provides a separate durable worker command for engineering jobs. It also
+provides a checksum-verified filesystem adapter for pilots and an optional
+S3-compatible object-storage adapter; production process supervision, managed
+identity integration, and the cloud deployment policy remain outside this
+repository.
 
 ## Current scope boundary
 
@@ -95,7 +97,8 @@ Still required for a Monroc operational release:
 
 - production identity, secret management, deployment, monitoring, and backup
   restore drills;
-- production worker supervision and object storage for generated CAD/report files;
+- production worker supervision and deployment of the configured object-storage
+  backend for generated CAD/report files;
 - graph-native topology/geometry optimization beyond the current bounded
   driver-and-wheel-mapping optimizer;
 - richer CAD feature import/assignment, review/approval, and failure guidance;

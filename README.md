@@ -24,14 +24,14 @@ Current status:
 - Monroc acceptance evaluations remain diagnostic unless their exact criteria match a protected approved profile configured with `EASYTOWING_MONROC_ACCEPTANCE_PROFILES_JSON`.
 - A separate `python -m easytowing.pilot` validator is ready for supplied Monroc case packages with hashed CAD, hand-calculation, and approved-reference evidence; pilot results never authorize release by themselves.
 - Multi-body sweep samples retain per-pose ideal, actual, error, axle-center, and synchronization series so pilot comparisons are not limited to aggregate metrics.
-- Controlled release delivery metadata is recorded with an artifact ID and SHA-256. Set `EASYTOWING_ARTIFACT_STORAGE_DIR` for atomic filesystem retention and authenticated artifact downloads; production cloud object storage is still a deployment adapter to add.
+- Controlled release delivery metadata is recorded with an artifact ID and SHA-256. Set `EASYTOWING_ARTIFACT_STORAGE_DIR` for atomic filesystem retention or `EASYTOWING_ARTIFACT_S3_BUCKET` for the bundled checksum-verified, server-side-encrypted S3-compatible adapter and authenticated artifact downloads.
 - Analytical tests cover steering, linkage, collision, optimization, reporting, and project storage.
 
 Remaining planned extensions:
 
 - validation of chained multi-trailer coordination against Monroc references
 - CAD-grade shared-network topology and geometry editing
-- production deployment wiring, object storage, and executed backup-restore drills
+- production deployment policy, identity integration, monitoring, and executed backup-restore drills
 - Monroc-approved acceptance thresholds and pilot validation against real CAD
 
 ## Local run

@@ -193,11 +193,11 @@ so a physical-feasibility PASS alone is never a release authorization.
   positions to named outputs, while a steering-side command is applied to each
   tire in the same wheel end. Real Monroc wheel-end conventions still require
   pilot validation.
-- Local mode is a standard-library demo using JSON project storage and
-  in-memory SaaS controls. Configured PostgreSQL mode now covers project,
-  revision, session, membership, approval, job, and audit persistence. A
-  protected filesystem artifact adapter can retain controlled release bytes,
-  but cloud object storage and the production deployment are still incomplete.
+ - Local mode is a standard-library demo using JSON project storage and
+   in-memory SaaS controls. Configured PostgreSQL mode now covers project,
+   revision, session, membership, approval, job, and audit persistence. The
+   protected filesystem adapter and optional S3-compatible adapter can retain
+   controlled release bytes, but production deployment policy remains incomplete.
 - Basic role-aware submit/approve/reject controls, approval history, and a
   release checklist now exist. Administrators can assign an active reviewer
   or administrator to a revision; assignment is tenant-scoped, audited, and
@@ -242,8 +242,9 @@ Monroc users.
   acceptance thresholds.
 - Verify the same cases through the browser as a designer and as an independent
   reviewer.
-- Deploy the PostgreSQL-backed mode with production identity and worker
-  supervision, encrypted object storage, monitoring, and an executed backup
-  restore/audit-continuity procedure. The repository now provides the durable
-  worker, checksum-verified filesystem retention, and restore-drill
-  foundations, but not the production deployment controls themselves.
+ - Deploy the PostgreSQL-backed mode with production identity and worker
+   supervision, configured encrypted object storage, monitoring, and an
+   executed backup restore/audit-continuity procedure. The repository now
+   provides the durable worker, checksum-verified filesystem/S3 retention, and
+   restore-drill foundations, but not the production deployment controls
+   themselves.

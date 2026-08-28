@@ -58,10 +58,10 @@ yet a production SaaS product or an approved Monroc design-release system.
   they are not yet controlled CAD/manufacturing deliverables.
 - Local mode still uses JSON projects and in-memory SaaS controls; configured
   PostgreSQL mode is wired and has passed adapter and HTTP round-trip checks.
-- Production deployment and worker supervision, cloud object storage, identity
-  integration, and executed restore drills remain incomplete. A durable
-  PostgreSQL worker command and a checksum-verified filesystem artifact adapter
-  now exist for the pilot deployment slice.
+ - Production deployment and worker supervision, identity integration, and
+   executed restore drills remain incomplete. Durable PostgreSQL worker and
+   checksum-verified filesystem/S3 artifact adapters now exist for the pilot
+   deployment slice.
 - Basic role-aware review controls, approval history, a release checklist, and
   tenant-scoped reviewer assignment now exist. Monroc-specific acceptance
   evidence remains incomplete.
@@ -104,8 +104,7 @@ yet a production SaaS product or an approved Monroc design-release system.
 
 ### SaaS deployment
 
-- Replace the pilot filesystem artifact adapter with encrypted object storage
-  for generated CAD/report artifacts and configure
-  `EASYTOWING_REQUIRE_ARTIFACT_STORAGE=1`.
+ - Deploy the S3-compatible encrypted object-storage adapter for generated
+   CAD/report artifacts and configure `EASYTOWING_REQUIRE_ARTIFACT_STORAGE=1`.
 - Add production identity integration, worker supervision, observability,
   secret management, backup restore drills, and deployment automation.

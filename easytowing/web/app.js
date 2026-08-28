@@ -1608,6 +1608,9 @@ function updateDxfSourceRetentionState() {
       && state.dxfImportSourceName === confirmedCadSource.source_name,
   );
   const hasSavedRevision = Boolean(state.currentProjectId && state.activeProjectRevisionId);
+  const hasDurableArtifactStorage = !["response-only", "unavailable"].includes(
+    state.artifactStorageBackend,
+  );
   if (state.cadSourceArtifact) {
     dxfRetainSourceButton.disabled = true;
     dxfSourceRetentionStatus.textContent = `Source retained as ${state.cadSourceArtifact.filename || "CAD artifact"} (${state.cadSourceArtifact.content_sha256 || "checksum recorded"}).`;
@@ -1616,14 +1619,14 @@ function updateDxfSourceRetentionState() {
   dxfRetainSourceButton.disabled = !hasConfirmedSource
     || !hasSavedRevision
     || state.workspaceDirty
-    || state.artifactStorageBackend !== "filesystem";
+    || !hasDurableArtifactStorage;
   if (!hasConfirmedSource) {
     dxfSourceRetentionStatus.textContent = "Apply confirmed CAD assignments before retaining the exact source bytes.";
   } else if (!hasSavedRevision) {
     dxfSourceRetentionStatus.textContent = "Save this revision before retaining the exact source bytes.";
   } else if (state.workspaceDirty) {
     dxfSourceRetentionStatus.textContent = "Save the current workspace changes before retaining the source on this revision.";
-  } else if (state.artifactStorageBackend !== "filesystem") {
+  } else if (!hasDurableArtifactStorage) {
     dxfSourceRetentionStatus.textContent = "Durable artifact storage is not configured; the source hash is retained, but bytes cannot be attached.";
   } else {
     dxfSourceRetentionStatus.textContent = "The exact confirmed source can now be attached to this saved revision.";

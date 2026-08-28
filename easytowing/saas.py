@@ -20,7 +20,7 @@ import math
 from pathlib import Path
 import secrets
 from threading import Event, Lock
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Protocol
 from uuid import uuid4
 
 
@@ -220,6 +220,65 @@ class ArtifactStorageError(RuntimeError):
     """Raised when a retained artifact cannot be written or verified."""
 
 
+class ArtifactBlobStore(Protocol):
+    """Storage contract used by controlled release and CAD retention routes."""
+
+    backend: str
+
+    def put(
+        self,
+        artifact_id: str,
+        content: bytes,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> object:
+        ...
+
+    def read(
+        self,
+        artifact_id: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> bytes:
+        ...
+
+    def delete(self, artifact_id: str) -> None:
+        ...
+
+    def health_check(self) -> None:
+        ...
+
+
+def _validate_artifact_id(artifact_id: str) -> str:
+    identifier = artifact_id.strip()
+    if (
+        not identifier
+        or identifier in {".", ".."}
+        or "/" in identifier
+        or "\\" in identifier
+    ):
+        raise ValueError("Artifact IDs must be non-empty single path segments.")
+    return identifier
+
+
+def _verify_artifact_content(
+    content: bytes,
+    *,
+    expected_sha256: str | None,
+    expected_size: int | None,
+) -> str:
+    if not content:
+        raise ArtifactStorageError("Artifact content cannot be empty.")
+    actual_sha256 = hashlib.sha256(content).hexdigest()
+    if expected_sha256 is not None and actual_sha256 != expected_sha256:
+        raise ArtifactStorageError("Artifact checksum does not match the expected SHA-256.")
+    if expected_size is not None and len(content) != expected_size:
+        raise ArtifactStorageError("Artifact byte size does not match the expected size.")
+    return actual_sha256
+
+
 class FileArtifactStore:
     """Durable local object store for controlled artifact bytes.
 
@@ -238,14 +297,7 @@ class FileArtifactStore:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, artifact_id: str) -> Path:
-        identifier = artifact_id.strip()
-        if (
-            not identifier
-            or identifier in {".", ".."}
-            or "/" in identifier
-            or "\\" in identifier
-        ):
-            raise ValueError("Artifact IDs must be non-empty single path segments.")
+        identifier = _validate_artifact_id(artifact_id)
         return self.root / f"{identifier}.blob"
 
     def put(
@@ -256,13 +308,11 @@ class FileArtifactStore:
         expected_sha256: str | None = None,
         expected_size: int | None = None,
     ) -> Path:
-        if not content:
-            raise ArtifactStorageError("Artifact content cannot be empty.")
-        actual_sha256 = hashlib.sha256(content).hexdigest()
-        if expected_sha256 is not None and actual_sha256 != expected_sha256:
-            raise ArtifactStorageError("Artifact checksum does not match the expected SHA-256.")
-        if expected_size is not None and len(content) != expected_size:
-            raise ArtifactStorageError("Artifact byte size does not match the expected size.")
+        _verify_artifact_content(
+            content,
+            expected_sha256=expected_sha256,
+            expected_size=expected_size,
+        )
         destination = self._path(artifact_id)
         temporary = self.root / f".{destination.name}.{secrets.token_hex(8)}.tmp"
         try:
@@ -286,11 +336,11 @@ class FileArtifactStore:
             content = path.read_bytes()
         except OSError as error:
             raise ArtifactStorageError(f"Retained artifact {artifact_id!r} is unavailable.") from error
-        actual_sha256 = hashlib.sha256(content).hexdigest()
-        if expected_sha256 is not None and actual_sha256 != expected_sha256:
-            raise ArtifactStorageError("Retained artifact checksum verification failed.")
-        if expected_size is not None and len(content) != expected_size:
-            raise ArtifactStorageError("Retained artifact byte-size verification failed.")
+        _verify_artifact_content(
+            content,
+            expected_sha256=expected_sha256,
+            expected_size=expected_size,
+        )
         return content
 
     def delete(self, artifact_id: str) -> None:
@@ -309,6 +359,135 @@ class FileArtifactStore:
             raise ArtifactStorageError("Artifact storage is not writable.") from error
         finally:
             probe.unlink(missing_ok=True)
+
+
+class S3ArtifactStore:
+    """Checksum-verified S3-compatible object storage for retained artifacts.
+
+    The client uses the standard boto3 credential/provider chain. It works with
+    AWS S3 or an approved private S3-compatible endpoint without putting
+    credentials in project data or request payloads.
+    """
+
+    backend = "s3"
+
+    def __init__(
+        self,
+        bucket: str,
+        *,
+        prefix: str = "easytowing",
+        region_name: str | None = None,
+        endpoint_url: str | None = None,
+        server_side_encryption: str | None = "AES256",
+        kms_key_id: str | None = None,
+        client: Any | None = None,
+    ) -> None:
+        self.bucket = bucket.strip()
+        if not self.bucket:
+            raise ValueError("An S3 artifact bucket is required.")
+        self.prefix = "/".join(
+            part for part in prefix.strip().strip("/").split("/") if part
+        )
+        self.server_side_encryption = (
+            server_side_encryption.strip() if server_side_encryption else None
+        )
+        self.kms_key_id = kms_key_id.strip() if kms_key_id else None
+        if self.kms_key_id and self.server_side_encryption != "aws:kms":
+            raise ValueError("An S3 KMS key requires server_side_encryption='aws:kms'.")
+        if client is None:
+            try:
+                import boto3
+            except ImportError as error:  # pragma: no cover - deployment setup
+                raise ArtifactStorageError(
+                    "S3 artifact storage requires the optional object-storage dependency."
+                ) from error
+            client = boto3.client(
+                "s3",
+                region_name=region_name.strip() if region_name else None,
+                endpoint_url=endpoint_url.strip() if endpoint_url else None,
+            )
+        self.client = client
+
+    def _key(self, artifact_id: str) -> str:
+        identifier = _validate_artifact_id(artifact_id)
+        return f"{self.prefix}/{identifier}" if self.prefix else identifier
+
+    def put(
+        self,
+        artifact_id: str,
+        content: bytes,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> str:
+        actual_sha256 = _verify_artifact_content(
+            content,
+            expected_sha256=expected_sha256,
+            expected_size=expected_size,
+        )
+        request: dict[str, Any] = {
+            "Bucket": self.bucket,
+            "Key": self._key(artifact_id),
+            "Body": content,
+            "ContentLength": len(content),
+            "Metadata": {"sha256": actual_sha256},
+        }
+        if self.server_side_encryption:
+            request["ServerSideEncryption"] = self.server_side_encryption
+        if self.kms_key_id:
+            request["SSEKMSKeyId"] = self.kms_key_id
+        try:
+            self.client.put_object(**request)
+        except Exception as error:  # noqa: BLE001 - normalize backend failures
+            raise ArtifactStorageError(
+                f"Could not retain artifact {artifact_id!r} in S3."
+            ) from error
+        return self._key(artifact_id)
+
+    def read(
+        self,
+        artifact_id: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> bytes:
+        try:
+            response = self.client.get_object(
+                Bucket=self.bucket,
+                Key=self._key(artifact_id),
+            )
+            body = response["Body"]
+            content = body.read()
+            close = getattr(body, "close", None)
+            if close is not None:
+                close()
+        except Exception as error:  # noqa: BLE001 - normalize backend failures
+            raise ArtifactStorageError(
+                f"Retained artifact {artifact_id!r} is unavailable in S3."
+            ) from error
+        _verify_artifact_content(
+            content,
+            expected_sha256=expected_sha256,
+            expected_size=expected_size,
+        )
+        return content
+
+    def delete(self, artifact_id: str) -> None:
+        try:
+            self.client.delete_object(
+                Bucket=self.bucket,
+                Key=self._key(artifact_id),
+            )
+        except Exception as error:  # noqa: BLE001 - normalize backend failures
+            raise ArtifactStorageError(
+                f"Could not remove artifact {artifact_id!r} from S3."
+            ) from error
+
+    def health_check(self) -> None:
+        try:
+            self.client.head_bucket(Bucket=self.bucket)
+        except Exception as error:  # noqa: BLE001 - hide provider details
+            raise ArtifactStorageError("S3 artifact storage is unavailable.") from error
 
 
 class SaaSControlStore:

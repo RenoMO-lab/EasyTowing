@@ -93,8 +93,17 @@ release bytes atomically and verifies their SHA-256 and byte count when they are
 downloaded. `GET /api/projects/{project_id}/revisions/{revision_id}/artifacts`
 lists retained artifacts, and appending the artifact ID to that path downloads
 one retained file. This is a dependency-free filesystem adapter for pilot and
-single-node deployments; production should replace it with an encrypted,
-access-controlled object-storage adapter.
+single-node deployments.
+
+Production can instead set `EASYTOWING_ARTIFACT_S3_BUCKET` and use the bundled
+S3-compatible adapter. The adapter uses the standard boto3 credential/provider
+chain, supports an optional private endpoint and prefix, verifies the SHA-256
+and byte count on every read, and sends server-side encryption parameters on
+every write. Set `EASYTOWING_ARTIFACT_S3_SSE=aws:kms` together with
+`EASYTOWING_ARTIFACT_S3_KMS_KEY_ID` when the Monroc deployment requires a
+customer-managed KMS key. Do not set the filesystem directory and S3 bucket at
+the same time; startup rejects that ambiguous configuration. Configure bucket
+IAM or workload identity outside the application and keep the bucket private.
 
 ## First administrator
 

@@ -8,7 +8,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY easytowing ./easytowing
 
-RUN pip install --no-cache-dir ".[postgres]" \
+RUN pip install --no-cache-dir ".[postgres,object-storage]" \
     && useradd --create-home --shell /usr/sbin/nologin easytowing \
     && mkdir -p /var/lib/easytowing/artifacts \
     && chown -R easytowing:easytowing /app /var/lib/easytowing

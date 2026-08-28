@@ -122,6 +122,7 @@ from .reporting import (
 )
 from .saas import (
     ApprovalStatus,
+    ArtifactBlobStore,
     ArtifactStorageError,
     EngineeringJobRunner,
     FileArtifactStore,
@@ -130,6 +131,7 @@ from .saas import (
     SaaSAuthorizationError,
     SaaSBootstrapError,
     SaaSControlStore,
+    S3ArtifactStore,
     UserRole,
     principal_payload,
     serialize_approval,
@@ -143,6 +145,12 @@ from .steering import beta_to_reference_radius_mm, build_demo_solution, solve_id
 WEB_DIR = Path(__file__).resolve().parent / "web"
 DATABASE_URL = os.environ.get("EASYTOWING_DATABASE_URL", "").strip()
 ARTIFACT_STORAGE_DIR = os.environ.get("EASYTOWING_ARTIFACT_STORAGE_DIR", "").strip()
+ARTIFACT_S3_BUCKET = os.environ.get("EASYTOWING_ARTIFACT_S3_BUCKET", "").strip()
+ARTIFACT_S3_PREFIX = os.environ.get("EASYTOWING_ARTIFACT_S3_PREFIX", "easytowing").strip()
+ARTIFACT_S3_REGION = os.environ.get("EASYTOWING_ARTIFACT_S3_REGION", "").strip()
+ARTIFACT_S3_ENDPOINT_URL = os.environ.get("EASYTOWING_ARTIFACT_S3_ENDPOINT_URL", "").strip()
+ARTIFACT_S3_SSE = os.environ.get("EASYTOWING_ARTIFACT_S3_SSE", "AES256").strip()
+ARTIFACT_S3_KMS_KEY_ID = os.environ.get("EASYTOWING_ARTIFACT_S3_KMS_KEY_ID", "").strip()
 ARTIFACT_STORAGE_REQUIRED = os.environ.get(
     "EASYTOWING_REQUIRE_ARTIFACT_STORAGE",
     "0",
@@ -178,11 +186,26 @@ WORKER_MAX_AGE_SECONDS = _positive_env_float(
     120.0,
 )
 MAX_CAD_SOURCE_BYTES = 10 * 1024 * 1024
-ARTIFACT_BLOB_STORE = (
-    FileArtifactStore(ARTIFACT_STORAGE_DIR)
-    if ARTIFACT_STORAGE_DIR
-    else None
-)
+def _build_artifact_blob_store() -> ArtifactBlobStore | None:
+    if ARTIFACT_STORAGE_DIR and ARTIFACT_S3_BUCKET:
+        raise RuntimeError(
+            "Configure either EASYTOWING_ARTIFACT_STORAGE_DIR or EASYTOWING_ARTIFACT_S3_BUCKET, not both."
+        )
+    if ARTIFACT_STORAGE_DIR:
+        return FileArtifactStore(ARTIFACT_STORAGE_DIR)
+    if ARTIFACT_S3_BUCKET:
+        return S3ArtifactStore(
+            ARTIFACT_S3_BUCKET,
+            prefix=ARTIFACT_S3_PREFIX,
+            region_name=ARTIFACT_S3_REGION or None,
+            endpoint_url=ARTIFACT_S3_ENDPOINT_URL or None,
+            server_side_encryption=ARTIFACT_S3_SSE or None,
+            kms_key_id=ARTIFACT_S3_KMS_KEY_ID or None,
+        )
+    return None
+
+
+ARTIFACT_BLOB_STORE = _build_artifact_blob_store()
 if DATABASE_URL:
     PROJECT_STORE = PostgreSQLProjectStore(DATABASE_URL)
     SAAS_CONTROL = PostgreSQLSaaSStore(DATABASE_URL)
@@ -3483,7 +3506,10 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             serialized_artifacts = []
             for artifact in artifacts:
                 payload = serialize_artifact(artifact)
-                if artifact.storage_backend == "filesystem" and ARTIFACT_BLOB_STORE is not None:
+                if (
+                    ARTIFACT_BLOB_STORE is not None
+                    and artifact.storage_backend == ARTIFACT_BLOB_STORE.backend
+                ):
                     payload["download_url"] = (
                         f"/api/projects/{parts[2]}/revisions/{parts[4]}/artifacts/{artifact.id}"
                     )
@@ -3515,7 +3541,10 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 if artifact is None:
                     self.send_error(404, "Artifact not found")
                     return
-                if artifact.storage_backend != "filesystem" or ARTIFACT_BLOB_STORE is None:
+                if (
+                    ARTIFACT_BLOB_STORE is None
+                    or artifact.storage_backend != ARTIFACT_BLOB_STORE.backend
+                ):
                     self._send_json(
                         {
                             "error_code": "ARTIFACT_NOT_RETAINED",

@@ -165,11 +165,13 @@ from .actual_steering import (
     solve_actual_steering,
 )
 from .saas import (
+    ArtifactBlobStore,
     ArtifactRecord,
     ArtifactStorageError,
     FileArtifactStore,
     JobStatus,
     PostgreSQLJobWorker,
+    S3ArtifactStore,
 )
 
 __all__ = [
@@ -313,6 +315,8 @@ __all__ = [
     "JobStatus",
     "PostgreSQLJobWorker",
     "ArtifactRecord",
+    "ArtifactBlobStore",
     "ArtifactStorageError",
     "FileArtifactStore",
+    "S3ArtifactStore",
 ]
