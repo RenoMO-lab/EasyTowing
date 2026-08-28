@@ -32,6 +32,7 @@ const state = {
   // New work starts in the explicit multi-body path. Loading an existing
   // legacy revision still switches this back to false in renderProjectFromDetail.
   combinationActive: true,
+  vehicleDefinitionConfirmed: false,
   combinationId: "workspace_combination",
   combinationName: "Workspace vehicle combination",
   combinationSynchronizations: [],
@@ -313,6 +314,7 @@ const combinationFields = document.getElementById("combination-fields");
 const combinationModeState = document.getElementById("combination-mode-state");
 const combinationModeNote = document.getElementById("combination-mode-note");
 const combinationActivateButton = document.getElementById("combination-activate-button");
+const combinationConfirmButton = document.getElementById("combination-confirm-button");
 const combinationCalculateButton = document.getElementById("combination-calculate-button");
 const combinationStatus = document.getElementById("combination-status");
 const legacyGeometryCard = document.querySelector(".legacy-geometry-card");
@@ -666,19 +668,25 @@ function isLegacyRevisionMode() {
   return Boolean(state.currentProjectId && !state.combinationActive && state.vehicleConfig);
 }
 
+function hasConfirmedVehicleDefinition() {
+  return state.combinationActive
+    ? state.vehicleDefinitionConfirmed
+    : Boolean(state.vehicleConfig);
+}
+
 function workflowStepStates() {
   const hasProject = Boolean(state.currentProjectId);
   const legacyRevision = isLegacyRevisionMode();
-  const hasVehicle = Boolean(state.combinationActive || state.vehicleConfig);
-  const hasManeuver = Boolean(state.maneuverResolved || state.currentPayload);
+  const hasVehicle = hasConfirmedVehicleDefinition();
+  const hasManeuver = hasVehicle && Boolean(state.maneuverResolved || state.currentPayload);
   const hasMechanism = state.combinationActive
-    ? Boolean(state.mechanismGraph)
+    ? hasVehicle && Boolean(state.mechanismGraph)
     : Boolean(state.linkageConfig && state.currentPayload?.linkage);
   const hasSolvedMechanism = state.combinationActive
-    ? Boolean(state.currentPayload?.mechanism_graph)
+    ? hasVehicle && Boolean(state.currentPayload?.mechanism_graph)
     : Boolean(state.currentPayload?.linkage);
   const hasFullRange = !state.combinationActive || state.sweepValidationPayload?.status === "PASS";
-  const hasValidation = Boolean(state.currentValidationPass && hasFullRange);
+  const hasValidation = Boolean(state.currentValidationPass && hasFullRange && hasVehicle);
   const hasOptimization = Boolean(state.optimizationPayload?.optimized);
   const resultState = !hasProject || !hasManeuver || !hasSolvedMechanism
     ? "WAIT"
@@ -690,12 +698,12 @@ function workflowStepStates() {
   return {
     project: hasProject ? (state.workspaceDirty ? "EDITING" : "READY") : "START",
     vehicle: legacyRevision ? "TODO" : (hasVehicle ? "READY" : "TODO"),
-    maneuver: legacyRevision ? "WAIT" : (hasManeuver ? "READY" : "TODO"),
-    mechanism: legacyRevision
+    maneuver: legacyRevision || !hasVehicle ? "WAIT" : (hasManeuver ? "READY" : "TODO"),
+    mechanism: legacyRevision || !hasVehicle
       ? "WAIT"
       : (hasSolvedMechanism ? "PASS" : (hasMechanism ? "READY" : "TODO")),
-    validate: legacyRevision ? "WAIT" : (hasValidation ? "PASS" : (hasSolvedMechanism ? "TODO" : "WAIT")),
-    optimize: legacyRevision
+    validate: legacyRevision || !hasVehicle ? "WAIT" : (hasValidation ? "PASS" : (hasSolvedMechanism ? "TODO" : "WAIT")),
+    optimize: legacyRevision || !hasVehicle
       ? "WAIT"
       : (hasOptimization
       ? (state.optimizationPayload.optimized.feasible === true ? "READY" : "FAIL")
@@ -707,13 +715,13 @@ function workflowStepStates() {
 function nextWorkflowAction() {
   const hasProject = Boolean(state.currentProjectId);
   const legacyRevision = isLegacyRevisionMode();
-  const hasVehicle = Boolean(state.combinationActive || state.vehicleConfig);
-  const hasManeuver = Boolean(state.maneuverResolved || state.currentPayload);
+  const hasVehicle = hasConfirmedVehicleDefinition();
+  const hasManeuver = hasVehicle && Boolean(state.maneuverResolved || state.currentPayload);
   const hasMechanism = state.combinationActive
-    ? Boolean(state.mechanismGraph)
+    ? hasVehicle && Boolean(state.mechanismGraph)
     : Boolean(state.linkageConfig && state.currentPayload?.linkage);
   const hasSolvedMechanism = state.combinationActive
-    ? Boolean(state.currentPayload?.mechanism_graph)
+    ? hasVehicle && Boolean(state.currentPayload?.mechanism_graph)
     : Boolean(state.currentPayload?.linkage);
   const hasFullRange = !state.combinationActive || state.sweepValidationPayload?.status === "PASS";
 
@@ -740,11 +748,11 @@ function nextWorkflowAction() {
   if (!hasVehicle) {
     return {
       step: "vehicle",
-      title: "Define the towing combination",
-      detail: "Enter every body, axle, wheel envelope, articulation joint, and physical joint stop.",
+      title: "Confirm the vehicle layout",
+      detail: "Review every body, axle, wheel envelope, articulation joint, and physical joint stop before continuing.",
       button: "Go to Vehicle",
-      action: "open-vehicle",
-      activeButton: "Review vehicle inputs",
+      action: "confirm-vehicle-layout",
+      activeButton: "Confirm vehicle layout",
     };
   }
   if (!hasManeuver) {
@@ -818,6 +826,9 @@ function runWorkflowNextAction(action) {
       return;
     case "activate-combination":
       combinationActivateButton.click();
+      return;
+    case "confirm-vehicle-layout":
+      combinationConfirmButton.click();
       return;
     case "resolve-maneuver":
       combinationCalculateButton.click();
@@ -1853,11 +1864,15 @@ function renderProjectSelector(projects, selectedId = null) {
   if (!Array.isArray(projects) || projects.length === 0) {
     const empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "No projects yet";
+    empty.textContent = "Start a new study";
     projectSelector.appendChild(empty);
     projectSelector.disabled = true;
     return;
   }
+  const newStudy = document.createElement("option");
+  newStudy.value = "";
+  newStudy.textContent = "Start a new study";
+  projectSelector.appendChild(newStudy);
   for (const project of projects) {
     const option = document.createElement("option");
     option.value = project.id;
@@ -1866,7 +1881,7 @@ function renderProjectSelector(projects, selectedId = null) {
   }
   projectSelector.value = selectedId && projects.some((project) => project.id === selectedId)
     ? selectedId
-    : projects[0].id;
+    : "";
   projectSelector.disabled = false;
 }
 
@@ -3531,6 +3546,13 @@ function renderCombinationConfig() {
   }
   if (combinationActivateButton) {
     combinationActivateButton.hidden = active;
+  }
+  if (combinationConfirmButton) {
+    combinationConfirmButton.hidden = !active;
+    combinationConfirmButton.disabled = !active;
+    combinationConfirmButton.textContent = state.vehicleDefinitionConfirmed
+      ? "Layout confirmed"
+      : "Confirm vehicle layout";
   }
   combinationConfig.replaceChildren();
   state.combinationBodies.forEach((body, bodyIndex) => {
@@ -6087,6 +6109,7 @@ async function renderProjectFromDetail(project) {
       ? activeRevision.steering_assignments
       : [];
     state.combinationActive = true;
+    state.vehicleDefinitionConfirmed = true;
     state.displayMode = "simulation";
     localStorage.setItem("easytowing_display_mode", state.displayMode);
     renderMechanismGraphConfiguration();
@@ -6098,6 +6121,7 @@ async function renderProjectFromDetail(project) {
   }
 
   state.combinationActive = false;
+  state.vehicleDefinitionConfirmed = false;
   state.mechanismGraph = null;
   state.mechanismDrivers = [];
   state.steeringAssignments = [];
@@ -6119,11 +6143,13 @@ async function refreshProjectPanel() {
   const preferredProjectId = localStorage.getItem("easytowing_project_id");
   const projects = Array.isArray(listPayload.projects) ? listPayload.projects : [];
   const preferredProjectBelongsToWorkspace = projects.some((project) => project.id === preferredProjectId);
-  const projectId = preferredProjectBelongsToWorkspace
-    ? preferredProjectId
-    : (listPayload.active_project_id || projects[0]?.id || null);
+  // Do not silently open seeded/reference data for a new browser session.
+  // Engineers can still choose any existing project from the selector.
+  const projectId = preferredProjectBelongsToWorkspace ? preferredProjectId : null;
   renderProjectSelector(projects, projectId);
   if (!projectId) {
+    renderProjectSummary(null);
+    setWorkflowStep("project");
     return;
   }
   const detail = await loadProjectDetail(projectId);
@@ -6135,7 +6161,7 @@ async function createProject() {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
-      name: projectNameInput.value || "Reference Demo Project",
+      name: projectNameInput.value || "New Monroc steering study",
       beta_deg: Number(betaSlider.value),
       beta_min_deg: state.betaRange.minDeg,
       beta_max_deg: state.betaRange.maxDeg,
@@ -6154,6 +6180,11 @@ async function createProject() {
   }
   const payload = await response.json();
   await renderProjectFromDetail(payload.project);
+  if (state.combinationActive) {
+    state.vehicleDefinitionConfirmed = false;
+    renderCombinationConfig();
+    setWorkflowStep("vehicle");
+  }
 }
 
 async function saveProjectRevision() {
@@ -6639,6 +6670,7 @@ combinationBodyCountInput.addEventListener("change", () => {
 
 combinationActivateButton.addEventListener("click", () => {
   state.combinationActive = true;
+  state.vehicleDefinitionConfirmed = false;
   state.vehicleConfig = null;
   state.mechanismGraph = null;
   state.mechanismDrivers = [];
@@ -6649,6 +6681,20 @@ combinationActivateButton.addEventListener("click", () => {
   renderCombinationConfig();
   renderMechanismGraphConfiguration("Define the active vehicle combination, then build the mechanism graph.");
   setWorkflowStep("vehicle");
+});
+
+combinationConfirmButton.addEventListener("click", () => {
+  try {
+    serializedCombination();
+    state.vehicleDefinitionConfirmed = true;
+    markWorkspaceDirty("Vehicle layout confirmed. Resolve the maneuver before building the mechanism.", {
+      invalidateMechanism: true,
+    });
+    renderCombinationConfig();
+    setWorkflowStep("maneuver");
+  } catch (error) {
+    combinationStatus.textContent = `Vehicle layout needs attention: ${error.message}`;
+  }
 });
 
 combinationTurnRadiusInput.addEventListener("input", () => {
@@ -6824,6 +6870,8 @@ projectCreateButton.addEventListener("click", () => {
 projectSelector.addEventListener("change", () => {
   const projectId = projectSelector.value;
   if (!projectId) {
+    localStorage.removeItem("easytowing_project_id");
+    window.location.reload();
     return;
   }
   projectSelector.disabled = true;

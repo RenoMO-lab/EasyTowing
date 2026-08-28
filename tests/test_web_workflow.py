@@ -109,6 +109,8 @@ class WebWorkflowContractTests(unittest.TestCase):
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn('action: "resolve-maneuver"', javascript)
         self.assertIn('activeButton: "Resolve maneuver"', javascript)
+        self.assertIn('action: "confirm-vehicle-layout"', javascript)
+        self.assertIn('activeButton: "Confirm vehicle layout"', javascript)
         self.assertIn("function runWorkflowNextAction(action)", javascript)
         self.assertIn('workflowNextButton.dataset.workflowAction = actionIsAvailable', javascript)
         self.assertIn("runWorkflowNextAction(action);", javascript)
@@ -172,6 +174,25 @@ class WebWorkflowContractTests(unittest.TestCase):
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn("combinationActive: true", javascript)
         self.assertIn("legacy revision still switches this back to false", javascript)
+
+    def test_new_workspace_does_not_auto_open_seeded_reference_data(self) -> None:
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('value="New Monroc steering study"', html)
+        self.assertIn('newStudy.textContent = "Start a new study"', javascript)
+        self.assertIn("const projectId = preferredProjectBelongsToWorkspace ? preferredProjectId : null;", javascript)
+        self.assertIn("renderProjectSummary(null);", javascript)
+        self.assertIn("window.location.reload();", javascript)
+
+    def test_vehicle_confirmation_gates_the_downstream_workflow(self) -> None:
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="combination-confirm-button"', html)
+        self.assertIn("function hasConfirmedVehicleDefinition", javascript)
+        self.assertIn("state.vehicleDefinitionConfirmed = false", javascript)
+        self.assertIn("serializedCombination();", javascript)
+        self.assertIn("Vehicle layout confirmed. Resolve the maneuver", javascript)
+        self.assertIn("state.vehicleDefinitionConfirmed = true", javascript)
 
     def test_combination_editor_preserves_body_tree_connections(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
