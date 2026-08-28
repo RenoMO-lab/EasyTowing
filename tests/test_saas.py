@@ -15,7 +15,9 @@ from easytowing.saas import (
     FileArtifactStore,
     JobStatus,
     PostgreSQLJobWorker,
+    Principal,
     SaaSAuthorizationError,
+    SaaSBootstrapError,
     SaaSControlStore,
     UserRole,
 )
@@ -73,6 +75,43 @@ class SaaSControlTests(unittest.TestCase):
         self.admin_token, self.admin = self.store.login("monroc", "admin@monroc.example", "admin password 123")
         self.other_token, self.other = self.store.login("other", "designer@other.example", "other password 123")
         self.store.bind_project(self.designer, "project_1")
+
+    def test_bootstrap_creates_only_the_first_administrator(self) -> None:
+        store = SaaSControlStore()
+        account = store.bootstrap_admin(
+            "new-tenant",
+            "owner@example.com",
+            "owner password 123",
+            display_name="Owner",
+            organization_name="Ignored by local store",
+        )
+
+        self.assertEqual(account.role, UserRole.ADMIN)
+        self.assertEqual(account.display_name, "Owner")
+        with self.assertRaises(SaaSBootstrapError):
+            store.bootstrap_admin(
+                "new-tenant",
+                "second-owner@example.com",
+                "second owner password 123",
+            )
+        with self.assertRaises(SaaSBootstrapError):
+            store.bootstrap_admin(
+                "another-tenant",
+                "another-owner@example.com",
+                "another owner password 123",
+            )
+        self.assertEqual(
+            [event.event_type for event in store.audit_events(
+                Principal(
+                    user_id=account.id,
+                    organization_id=account.organization_id,
+                    email=account.email,
+                    role=account.role,
+                    display_name=account.display_name,
+                ),
+            )],
+            ["BOOTSTRAP_ADMIN_CREATED"],
+        )
 
     def test_reviewer_assignment_is_tenant_scoped_and_audited(self) -> None:
         users = self.store.list_users(self.admin)

@@ -103,11 +103,18 @@ CREATE TABLE IF NOT EXISTS engineering_jobs (
     created_at timestamptz NOT NULL,
     started_at timestamptz,
     completed_at timestamptz,
+    claimed_by text,
+    lease_token text,
     CONSTRAINT engineering_jobs_org_submitter_fk
         FOREIGN KEY (organization_id, submitted_by) REFERENCES users(organization_id, id),
     CONSTRAINT engineering_jobs_org_project_fk
         FOREIGN KEY (organization_id, project_id) REFERENCES projects(organization_id, id)
 );
+
+ALTER TABLE engineering_jobs
+    ADD COLUMN IF NOT EXISTS claimed_by text;
+ALTER TABLE engineering_jobs
+    ADD COLUMN IF NOT EXISTS lease_token text;
 
 CREATE TABLE IF NOT EXISTS worker_heartbeats (
     worker_id text PRIMARY KEY,
@@ -315,6 +322,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON user_sessions (token_hash, exp
 CREATE INDEX IF NOT EXISTS idx_projects_org_updated ON projects (organization_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_revisions_project_created ON project_revisions (project_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_jobs_org_created ON engineering_jobs (organization_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_lease_token
+    ON engineering_jobs (lease_token) WHERE lease_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_artifacts_revision_created ON artifact_records (organization_id, project_id, revision_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_events (organization_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_approvals_org_status ON revision_approvals (organization_id, status);

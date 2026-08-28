@@ -99,8 +99,12 @@ access-controlled object-storage adapter.
 ## First administrator
 
 Set a one-time `EASYTOWING_BOOTSTRAP_TOKEN` out of band and call
-`POST /api/auth/bootstrap` with an organization ID, email, role, and password.
-Remove the bootstrap token after the first administrator has been created.
+`POST /api/auth/bootstrap` with an organization ID, email, and password. The
+endpoint always creates an administrator, and it rejects the organization after
+the deployment has any user, including concurrent bootstrap attempts. This is
+the single first-tenant provisioning operation; use authenticated admin user
+management for subsequent accounts. Remove the bootstrap token after the first
+administrator has been created.
 Passwords are hashed with scrypt and bearer tokens are stored only as SHA-256
 hashes in the control-plane session record. The PostgreSQL adapter runs the
 schema migration on server startup; production deployments should run schema
@@ -151,10 +155,12 @@ python -m easytowing.worker --worker-id easytowing-worker-01
 
 Workers claim jobs with PostgreSQL row locks and `SKIP LOCKED`, persist terminal
 results, and return abandoned running jobs to the queue after the configured
-lease period. They publish a heartbeat while idle, running, and after job
-completion. A deployment using `EASYTOWING_REQUIRE_WORKER=1` should run at least
-one supervised worker and alert on `/api/ready` returning HTTP 503. Local
-development keeps the in-process runner so the demo remains easy to start.
+lease period. Each claim has a unique worker lease token, so a stale worker
+cannot overwrite a replacement worker's result. Workers publish a heartbeat
+while idle, running, and after job completion. A deployment using
+`EASYTOWING_REQUIRE_WORKER=1` should run at least one supervised worker and
+alert on `/api/ready` returning HTTP 503. Local development keeps the
+in-process runner so the demo remains easy to start.
 
 Use [backup-postgres.ps1](../ops/backup-postgres.ps1) with a protected
 `DATABASE_URL` and schedule it outside the application process. Store dumps on

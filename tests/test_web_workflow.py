@@ -45,6 +45,13 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("UNAPPROVED", javascript)
         self.assertIn('sweepValidationButton.disabled = !state.combinationActive || !state.mechanismGraph;', javascript)
 
+    def test_bootstrap_endpoint_is_first_admin_only(self) -> None:
+        server = (ROOT / "easytowing" / "demo_server.py").read_text(encoding="utf-8")
+        self.assertIn("SaaSBootstrapError", server)
+        self.assertIn("SAAS_CONTROL.bootstrap_admin", server)
+        self.assertIn('"BOOTSTRAP_ALREADY_COMPLETED"', server)
+        self.assertNotIn('role=UserRole(str(body.get("role"', server)
+
     def test_ui_exposes_reference_data_boundary_and_result_reading_guide(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
         styles = (ROOT / "easytowing" / "web" / "styles.css").read_text(encoding="utf-8")

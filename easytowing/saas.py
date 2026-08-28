@@ -28,6 +28,10 @@ class SaaSAuthorizationError(PermissionError):
     """Raised when a principal lacks tenant or role access."""
 
 
+class SaaSBootstrapError(RuntimeError):
+    """Raised when deployment bootstrap has already been consumed."""
+
+
 class UserRole(StrEnum):
     VIEWER = "viewer"
     DESIGNER = "designer"
@@ -191,6 +195,8 @@ class EngineeringJob:
     created_at: datetime = field(default_factory=_utc_now)
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    worker_id: str | None = None
+    lease_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,6 +380,51 @@ class SaaSControlStore:
                 target_type="user",
                 target_id=account.id,
                 metadata={"email": normalized_email, "role": account.role.value},
+            )
+            return account
+
+    def bootstrap_admin(
+        self,
+        organization_id: str,
+        email: str,
+        password: str,
+        *,
+        display_name: str = "",
+        organization_name: str = "",
+    ) -> UserAccount:
+        """Create the only initial administrator for local bootstrap.
+
+        This operation is intentionally separate from normal user creation so
+        an out-of-band bootstrap token cannot be used to mint additional
+        administrators after first setup.
+        """
+
+        normalized_organization = organization_id.strip()
+        if not normalized_organization:
+            raise ValueError("An organization ID is required.")
+        normalized_email = email.strip().lower()
+        if not normalized_email or "@" not in normalized_email:
+            raise ValueError("A valid email address is required.")
+        password_hash = hash_password(password)
+        with self._lock:
+            if self._users_by_email:
+                raise SaaSBootstrapError("Bootstrap has already been consumed by this deployment.")
+            account = UserAccount(
+                id=_new_id("usr"),
+                organization_id=normalized_organization,
+                email=normalized_email,
+                display_name=display_name.strip() or normalized_email,
+                role=UserRole.ADMIN,
+                password_hash=password_hash,
+            )
+            self._users_by_email[(normalized_organization, normalized_email)] = account
+            self._audit_event(
+                organization_id=normalized_organization,
+                actor_user_id=None,
+                event_type="BOOTSTRAP_ADMIN_CREATED",
+                target_type="user",
+                target_id=account.id,
+                metadata={"email": normalized_email, "role": UserRole.ADMIN.value},
             )
             return account
 
@@ -985,6 +1036,75 @@ class PostgreSQLSaaSStore:
             )
         )
 
+    def bootstrap_admin(
+        self,
+        organization_id: str,
+        email: str,
+        password: str,
+        *,
+        display_name: str = "",
+        organization_name: str = "",
+    ) -> UserAccount:
+        """Atomically create an organization and its first administrator."""
+
+        normalized_organization = organization_id.strip()
+        if not normalized_organization:
+            raise ValueError("An organization ID is required.")
+        normalized_email = email.strip().lower()
+        if not normalized_email or "@" not in normalized_email:
+            raise ValueError("A valid email address is required.")
+        password_hash = hash_password(password)
+        account = UserAccount(
+            id=_new_id("usr"),
+            organization_id=normalized_organization,
+            email=normalized_email,
+            display_name=display_name.strip() or normalized_email,
+            role=UserRole.ADMIN,
+            password_hash=password_hash,
+        )
+
+        def bootstrap(connection: Any) -> UserAccount:
+            cursor = connection.cursor()
+            # Serialize bootstrap attempts across the deployment before
+            # checking users, otherwise two first-admin requests can race.
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtext('easytowing.bootstrap.v1'))")
+            cursor.execute(
+                "SELECT 1 FROM users LIMIT 1",
+            )
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    "INSERT INTO organizations (id, name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING",
+                    (normalized_organization, organization_name.strip() or normalized_organization),
+                )
+            else:
+                raise SaaSBootstrapError("Bootstrap has already been consumed by this deployment.")
+            cursor.execute(
+                """
+                INSERT INTO users (id, organization_id, email, display_name, role, password_hash)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    account.id,
+                    account.organization_id,
+                    account.email,
+                    account.display_name,
+                    account.role.value,
+                    account.password_hash,
+                ),
+            )
+            self._insert_audit_cursor(
+                cursor,
+                normalized_organization,
+                None,
+                "BOOTSTRAP_ADMIN_CREATED",
+                "user",
+                account.id,
+                {"email": account.email, "role": account.role.value},
+            )
+            return account
+
+        return self._transaction(bootstrap)
+
     def create_user(
         self,
         organization_id: str,
@@ -1142,6 +1262,8 @@ class PostgreSQLSaaSStore:
             created_at=PostgreSQLSaaSStore._datetime(row[10]) or _utc_now(),
             started_at=PostgreSQLSaaSStore._datetime(row[11]),
             completed_at=PostgreSQLSaaSStore._datetime(row[12]),
+            worker_id=None if row[13] is None else str(row[13]),
+            lease_id=None if row[14] is None else str(row[14]),
         )
 
     def authenticate(self, raw_token: str) -> Principal:
@@ -1871,7 +1993,7 @@ class PostgreSQLSaaSStore:
                 """
                 SELECT id, organization_id, submitted_by, project_id, kind,
                        request_json, status, progress, result_json, error,
-                       created_at, started_at, completed_at
+                       created_at, started_at, completed_at, claimed_by, lease_token
                 FROM engineering_jobs
                 WHERE id = %s AND organization_id = %s
                 """,
@@ -1902,7 +2024,7 @@ class PostgreSQLSaaSStore:
                 """
                 SELECT id, organization_id, submitted_by, project_id, kind,
                        request_json, status, progress, result_json, error,
-                       created_at, started_at, completed_at
+                       created_at, started_at, completed_at, claimed_by, lease_token
                 FROM engineering_jobs
                 WHERE id = %s AND organization_id = %s
                 """,
@@ -2038,7 +2160,7 @@ class PostgreSQLSaaSStore:
                 """
                 SELECT id, organization_id, submitted_by, project_id, kind,
                        request_json, status, progress, result_json, error,
-                       created_at, started_at, completed_at
+                       created_at, started_at, completed_at, claimed_by, lease_token
                 FROM engineering_jobs
                 WHERE status = %s
                   AND (%s::text IS NULL OR kind = %s)
@@ -2053,17 +2175,21 @@ class PostgreSQLSaaSStore:
                 return None
             job = self._job_from_row(row)
             now = _utc_now()
+            lease_id = secrets.token_urlsafe(24)
             cursor.execute(
                 """
                 UPDATE engineering_jobs
                 SET status = %s, progress = %s, started_at = %s,
-                    completed_at = NULL, result_json = NULL, error = NULL
+                    completed_at = NULL, result_json = NULL, error = NULL,
+                    claimed_by = %s, lease_token = %s
                 WHERE id = %s AND status = %s
                 """,
                 (
                     JobStatus.RUNNING.value,
                     5,
                     now,
+                    worker,
+                    lease_id,
                     job.id,
                     JobStatus.QUEUED.value,
                 ),
@@ -2083,6 +2209,8 @@ class PostgreSQLSaaSStore:
             job.completed_at = None
             job.result = None
             job.error = None
+            job.worker_id = worker
+            job.lease_id = lease_id
             return job
 
         return self._transaction(claim)
@@ -2110,7 +2238,7 @@ class PostgreSQLSaaSStore:
                 """
                 SELECT id, organization_id, submitted_by, project_id, kind,
                        request_json, status, progress, result_json, error,
-                       created_at, started_at, completed_at
+                       created_at, started_at, completed_at, claimed_by, lease_token
                 FROM engineering_jobs
                 WHERE id = %s AND organization_id = %s
                 FOR UPDATE
@@ -2123,17 +2251,23 @@ class PostgreSQLSaaSStore:
             current = self._job_from_row(row)
             if current.status != JobStatus.RUNNING:
                 raise ValueError("Only running jobs can be finished by a worker.")
+            if current.worker_id != worker or not job.lease_id or current.lease_id != job.lease_id:
+                raise ValueError("The worker lease is no longer active for this job.")
             current.status = status
             current.progress = 100
             current.result = result
             current.error = error
             current.completed_at = _utc_now()
+            current.worker_id = None
+            current.lease_id = None
             cursor.execute(
                 """
                 UPDATE engineering_jobs
                 SET status = %s, progress = %s, result_json = %s::jsonb,
-                    error = %s, completed_at = %s
+                    error = %s, completed_at = %s,
+                    claimed_by = NULL, lease_token = NULL
                 WHERE id = %s AND organization_id = %s AND status = %s
+                  AND claimed_by = %s AND lease_token = %s
                 """,
                 (
                     status.value,
@@ -2144,6 +2278,8 @@ class PostgreSQLSaaSStore:
                     current.id,
                     current.organization_id,
                     JobStatus.RUNNING.value,
+                    worker,
+                    job.lease_id,
                 ),
             )
             self._insert_audit_cursor(
@@ -2192,7 +2328,7 @@ class PostgreSQLSaaSStore:
                     UPDATE engineering_jobs
                     SET status = %s, progress = 0, started_at = NULL,
                         completed_at = NULL, result_json = NULL,
-                        error = %s
+                        error = %s, claimed_by = NULL, lease_token = NULL
                     WHERE id = %s AND status = %s
                     """,
                     (
@@ -2255,44 +2391,37 @@ class PostgreSQLJobWorker:
             status="running",
             job_id=job.id,
         )
-        operation = self._operations.get(job.kind)
-        if operation is None:
-            completed = self._store.finish_claimed_job(
-                job,
-                status=JobStatus.FAILED,
-                worker_id=self._worker_id,
-                error=f"No worker operation is registered for job kind {job.kind!r}.",
-            )
-            self._store.record_worker_heartbeat(
-                worker_id=self._worker_id,
-                status="idle",
-            )
-            return completed
         try:
-            result = operation(job.request)
-        except Exception as error:  # noqa: BLE001 - persist worker failures for polling clients
-            completed = self._store.finish_claimed_job(
+            operation = self._operations.get(job.kind)
+            if operation is None:
+                return self._store.finish_claimed_job(
+                    job,
+                    status=JobStatus.FAILED,
+                    worker_id=self._worker_id,
+                    error=f"No worker operation is registered for job kind {job.kind!r}.",
+                )
+            try:
+                result = operation(job.request)
+            except Exception as error:  # noqa: BLE001 - persist worker failures for polling clients
+                return self._store.finish_claimed_job(
+                    job,
+                    status=JobStatus.FAILED,
+                    worker_id=self._worker_id,
+                    error=str(error),
+                )
+            return self._store.finish_claimed_job(
                 job,
-                status=JobStatus.FAILED,
+                status=JobStatus.SUCCEEDED,
                 worker_id=self._worker_id,
-                error=str(error),
+                result=result,
             )
+        finally:
+            # A lost lease must not leave the readiness heartbeat stuck in
+            # running state while another worker owns the replacement claim.
             self._store.record_worker_heartbeat(
                 worker_id=self._worker_id,
                 status="idle",
             )
-            return completed
-        completed = self._store.finish_claimed_job(
-            job,
-            status=JobStatus.SUCCEEDED,
-            worker_id=self._worker_id,
-            result=result,
-        )
-        self._store.record_worker_heartbeat(
-            worker_id=self._worker_id,
-            status="idle",
-        )
-        return completed
 
     def run_forever(
         self,
@@ -2305,6 +2434,11 @@ class PostgreSQLJobWorker:
             raise ValueError("poll_seconds must be positive and finite.")
         event = stop_event or Event()
         while not event.is_set():
-            job = self.run_once(kind=kind)
+            try:
+                job = self.run_once(kind=kind)
+            except Exception as error:  # noqa: BLE001 - keep the supervisor alive after a lease race
+                print(f"EasyTowing worker cycle failed: {error}")
+                event.wait(poll_seconds)
+                continue
             if job is None:
                 event.wait(poll_seconds)

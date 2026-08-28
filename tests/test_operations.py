@@ -18,6 +18,7 @@ class OperationsContractTests(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         env_example = (ROOT / "ops" / ".env.example").read_text(encoding="utf-8")
         saas = (ROOT / "easytowing" / "saas.py").read_text(encoding="utf-8")
+        schema = (ROOT / "easytowing" / "postgres_schema.sql").read_text(encoding="utf-8")
         self.assertIn("services:", compose)
         self.assertIn("db:", compose)
         self.assertIn("api:", compose)
@@ -30,6 +31,9 @@ class OperationsContractTests(unittest.TestCase):
         self.assertIn("EASYTOWING_DATABASE_URL=", env_example)
         self.assertIn("EASYTOWING_BOOTSTRAP_TOKEN=", env_example)
         self.assertIn("pg_advisory_xact_lock(hashtext('easytowing.schema.v1'))", saas)
+        self.assertIn("def bootstrap_admin", saas)
+        self.assertIn("lease_token", schema)
+        self.assertIn("current.lease_id", saas)
 
 
 if __name__ == "__main__":

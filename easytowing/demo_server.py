@@ -128,6 +128,7 @@ from .saas import (
     Principal,
     PostgreSQLSaaSStore,
     SaaSAuthorizationError,
+    SaaSBootstrapError,
     SaaSControlStore,
     UserRole,
     principal_payload,
@@ -3576,19 +3577,16 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error_code": "FORBIDDEN", "message": "Bootstrap is not enabled."}, status=403)
                 return
             try:
-                create_organization = getattr(SAAS_CONTROL, "create_organization", None)
-                if create_organization is not None:
-                    create_organization(
-                        str(body.get("organization_id", "")),
-                        str(body.get("organization_name", body.get("organization_id", ""))),
-                    )
-                account = SAAS_CONTROL.create_user(
+                account = SAAS_CONTROL.bootstrap_admin(
                     str(body.get("organization_id", "")),
                     str(body.get("email", "")),
                     str(body.get("password", "")),
-                    role=UserRole(str(body.get("role", UserRole.ADMIN.value))),
                     display_name=str(body.get("display_name", "")),
+                    organization_name=str(body.get("organization_name", body.get("organization_id", ""))),
                 )
+            except SaaSBootstrapError as error:
+                self._send_json({"error_code": "BOOTSTRAP_ALREADY_COMPLETED", "message": str(error)}, status=409)
+                return
             except (TypeError, ValueError) as error:
                 self.send_error(400, str(error))
                 return
