@@ -393,11 +393,13 @@ class WebWorkflowContractTests(unittest.TestCase):
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn("Edit graph topology and outputs", html)
         self.assertIn("Shared point IDs connect components", html)
+        self.assertIn("generated graph is shown as a summary first", html)
         self.assertIn("function readMechanismGraphEditor", javascript)
         self.assertIn("function mechanismBodyOptions", javascript)
         self.assertIn("Global / no body", javascript)
         self.assertIn("resetEngineeringEvidence", javascript)
         self.assertIn("state.workspaceDirty = true", javascript)
+        self.assertIn("mechanismGraphEditor.open = false", javascript)
 
     def test_mechanism_build_preserves_maneuver_but_never_stale_evidence(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")

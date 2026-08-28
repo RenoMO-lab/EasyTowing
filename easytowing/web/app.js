@@ -4226,7 +4226,9 @@ function buildMechanismGraphFromCombination() {
   renderMechanismGraphConfiguration(
     `Graph built with ${drivers.length} articulation drivers and explicit mappings for ${assignments.length} wheels.`,
   );
-  mechanismGraphEditor.open = true;
+  // Keep the generated graph summary-first; open the low-level editor only when
+  // the engineer explicitly chooses to inspect or change the topology.
+  mechanismGraphEditor.open = false;
 }
 
 function angleDegreesFromConfig(item, name) {
@@ -4612,6 +4614,7 @@ function applyMechanismGraphEdits() {
     );
     renderMechanismGraphConfiguration("Graph edits applied. Solve the design to generate new engineering evidence.");
     mechanismGraphEditorStatus.textContent = "Graph edits applied. The saved revision is now out of date; save a new revision after solving.";
+    mechanismGraphEditor.open = false;
   } catch (error) {
     mechanismGraphEditorStatus.textContent = `Graph edits rejected: ${error.message}`;
   }
