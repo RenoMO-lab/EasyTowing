@@ -94,6 +94,13 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn('state.workspaceDirty ? "PENDING"', javascript)
         self.assertIn('state.workspaceDirty\n      ? "INCOMPLETE"', javascript)
 
+    def test_combination_edits_clear_stale_maneuver_status(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn(
+            'combinationStatus.textContent = "Model changed. Resolve the maneuver before interpreting results."',
+            javascript,
+        )
+
     def test_workspace_explains_the_next_action_and_step_state(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
@@ -102,6 +109,10 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("function renderWorkflowProgress", javascript)
         self.assertIn("workflowStepStates", javascript)
         self.assertIn("button.dataset.workflowState = status", javascript)
+
+    def test_restored_project_opens_on_the_first_incomplete_step(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertGreaterEqual(javascript.count("setWorkflowStep(nextWorkflowAction().step);"), 2)
 
     def test_each_workflow_step_explains_inputs_outputs_and_release_rule(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")

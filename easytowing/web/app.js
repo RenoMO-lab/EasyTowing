@@ -4728,6 +4728,9 @@ function resetEngineeringEvidence(summary, { preserveManeuver = false } = {}) {
 
 function markWorkspaceDirty(summary, { invalidateMechanism = false } = {}) {
   state.workspaceDirty = true;
+  if (state.combinationActive && combinationStatus) {
+    combinationStatus.textContent = "Model changed. Resolve the maneuver before interpreting results.";
+  }
   if (invalidateMechanism && (state.mechanismGraph || state.mechanismDrivers.length || state.steeringAssignments.length)) {
     state.mechanismGraph = null;
     state.mechanismDrivers = [];
@@ -6146,6 +6149,7 @@ async function renderProjectFromDetail(project) {
     await calculateCombinationStudy(Number(activeRevision.beta_deg));
     renderSweepValidation(activeRevision.snapshot?.sweep_validation || null);
     renderReleaseChecklist();
+    setWorkflowStep(nextWorkflowAction().step);
     return;
   }
 
@@ -6165,6 +6169,7 @@ async function renderProjectFromDetail(project) {
   updateExportLinks();
   await loadState(Number(activeRevision.beta_deg));
   renderReleaseChecklist();
+  setWorkflowStep(nextWorkflowAction().step);
 }
 
 async function refreshProjectPanel() {
