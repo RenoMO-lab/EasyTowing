@@ -130,6 +130,11 @@ so a physical-feasibility PASS alone is never a release authorization.
 - Automated browser checks verified the workflow at 1280 px and 390 px with no
   horizontal page overflow. Automated browser evidence is not a substitute for
   Monroc human usability sign-off.
+- Restoring a saved project now opens the first incomplete workflow step instead
+  of leaving the engineer on the Project dashboard while recommending a later
+  mechanism or validation action. Combination edits also clear the previous
+  maneuver status immediately, so stale body and axle counts are not presented
+  as current evidence.
 - The workspace now labels seeded inputs as simulation/reference data and places
   a plain-language PASS, FAIL, PENDING, and BLOCKED reading guide beside the
   engineering decision.
@@ -161,7 +166,7 @@ so a physical-feasibility PASS alone is never a release authorization.
 - PostgreSQL persistence now has composite tenant-scoped foreign keys across
   sessions, projects, revisions, approvals, jobs, artifacts, and audit actors;
   application checks remain in place as the first authorization boundary.
-- Verification on 2026-08-28: 209 automated tests passed with 3 expected
+- Verification on 2026-08-28: 211 automated tests passed with 3 expected
   PostgreSQL integration skips; Python compilation, browser JavaScript syntax,
   whitespace checks, and real-browser desktop/mobile workflow checks passed.
 
