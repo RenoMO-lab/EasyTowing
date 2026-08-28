@@ -403,6 +403,18 @@ class DemoPayloadTests(unittest.TestCase):
         self.assertEqual(sweep["sample_count"], 5)
         self.assertEqual(sweep["solved_sample_count"], 5)
         self.assertEqual([sample["beta_deg"] for sample in sweep["samples"]], [-20.0, -10.0, 0.0, 10.0, 20.0])
+        steering = sweep["samples"][0]["steering"]
+        self.assertEqual(
+            set(steering["ideal_wheel_angles_deg"]),
+            {"rear_axle_left", "rear_axle_right", "front_axle_left", "front_axle_right"},
+        )
+        self.assertEqual(
+            set(steering["actual_wheel_angles_deg"]),
+            {"rear_axle_left", "rear_axle_right", "front_axle_left", "front_axle_right"},
+        )
+        self.assertIn("wheel_errors_deg", steering)
+        self.assertIn("ideal_axle_center_angles_deg", steering)
+        self.assertIn("actual_axle_center_angles_deg", steering)
 
     def test_combination_graph_sweep_evaluates_all_configured_joint_combinations(self) -> None:
         combination = _parse_vehicle_combination(

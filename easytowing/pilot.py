@@ -27,6 +27,14 @@ PILOT_METRIC_KEYS = (
     "max_abs_synchronization_error_deg",
     "maximum_mechanism_residual_mm",
 )
+PILOT_STEERING_FIELDS = (
+    "ideal_wheel_angles_deg",
+    "actual_wheel_angles_deg",
+    "wheel_errors_deg",
+    "ideal_axle_center_angles_deg",
+    "actual_axle_center_angles_deg",
+    "synchronization_errors_deg",
+)
 
 
 def _finite_number(value: object) -> float | None:
@@ -131,8 +139,104 @@ def _snapshot_metrics(snapshot: Mapping[str, Any]) -> dict[str, float | None]:
     }
 
 
+def _snapshot_steering_samples(snapshot: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    sweep = snapshot.get("sweep_validation")
+    if not isinstance(sweep, Mapping) or not isinstance(sweep.get("samples"), list):
+        return []
+    return [
+        sample
+        for sample in sweep["samples"]
+        if isinstance(sample, Mapping)
+        and isinstance(sample.get("joint_angles_deg"), Mapping)
+        and isinstance(sample.get("steering"), Mapping)
+    ]
+
+
+def _steering_series_check(
+    actual_samples: list[Mapping[str, Any]],
+    evidence: Mapping[str, Any],
+    label: str,
+) -> dict[str, object]:
+    raw_fields = evidence.get("steering_fields")
+    if not isinstance(raw_fields, list) or not raw_fields or any(
+        not isinstance(field, str) or field not in PILOT_STEERING_FIELDS
+        for field in raw_fields
+    ) or len(set(raw_fields)) != len(raw_fields):
+        raise ValueError(
+            f"{label}.steering_fields must contain unique fields from {', '.join(PILOT_STEERING_FIELDS)}."
+        )
+    tolerance = _finite_number(evidence.get("steering_tolerance_deg"))
+    if tolerance is None or tolerance < 0.0:
+        raise ValueError(f"{label}.steering_tolerance_deg must be finite and non-negative.")
+    expected_samples = evidence.get("steering_samples")
+    if not isinstance(expected_samples, list) or not expected_samples:
+        raise ValueError(f"{label}.steering_samples must be a non-empty array.")
+
+    compared_values = 0
+    worst_delta = 0.0
+    worst_reference = "none"
+    failures: list[str] = []
+    actual_by_pose = {
+        tuple(sorted(sample["joint_angles_deg"].items())): sample
+        for sample in actual_samples
+    }
+    for sample_index, expected_sample_raw in enumerate(expected_samples):
+        expected_sample = _mapping(expected_sample_raw, f"{label}.steering_samples[{sample_index}]")
+        expected_pose = _mapping(expected_sample.get("joint_angles_deg"), f"{label}.steering_samples[{sample_index}].joint_angles_deg")
+        pose_key = tuple(sorted(expected_pose.items()))
+        actual_sample = actual_by_pose.get(pose_key)
+        if actual_sample is None:
+            failures.append(f"missing pose {sample_index}")
+            continue
+        expected_steering = _mapping(expected_sample.get("steering"), f"{label}.steering_samples[{sample_index}].steering")
+        actual_steering = _mapping(actual_sample.get("steering"), f"actual steering sample {sample_index}")
+        for field in raw_fields:
+            expected_map = _mapping(expected_steering.get(field), f"{label} field {field}")
+            actual_map = _mapping(actual_steering.get(field), f"actual field {field}")
+            if set(expected_map) != set(actual_map):
+                failures.append(f"{field} keys differ at pose {sample_index}")
+                continue
+            for item_id, expected_value_raw in expected_map.items():
+                expected_value = _finite_number(expected_value_raw)
+                actual_value = _finite_number(actual_map.get(item_id))
+                if expected_value is None or actual_value is None:
+                    failures.append(f"{field}.{item_id} is missing or non-finite at pose {sample_index}")
+                    continue
+                delta = abs(actual_value - expected_value)
+                compared_values += 1
+                if delta > worst_delta:
+                    worst_delta = delta
+                    worst_reference = f"{field}.{item_id} at pose {sample_index}"
+                if delta > tolerance:
+                    failures.append(
+                        f"{field}.{item_id} differs by {delta:.6f} deg at pose {sample_index}"
+                    )
+
+    passed = len(actual_samples) == len(expected_samples) and not failures and compared_values > 0
+    detail = (
+        f"Compared {compared_values} steering values across {len(expected_samples)} poses; "
+        f"worst difference {worst_delta:.6f} deg at {worst_reference}."
+        if passed
+        else "The per-pose steering series is missing, incomplete, or outside the supplied tolerance. "
+        + "; ".join(failures[:3])
+    )
+    return {
+        "id": "STEERING_SERIES",
+        "status": "PASS" if passed else "FAIL",
+        "actual": {
+            "sample_count": len(actual_samples),
+            "compared_values": compared_values,
+            "worst_delta_deg": worst_delta,
+        },
+        "expected": {"sample_count": len(expected_samples), "fields": list(raw_fields)},
+        "tolerance_deg": tolerance,
+        "detail": detail,
+    }
+
+
 def _comparison_checks(
     actual_metrics: Mapping[str, float | None],
+    actual_steering_samples: list[Mapping[str, Any]],
     evidence: Mapping[str, Any],
     label: str,
 ) -> list[dict[str, object]]:
@@ -160,6 +264,7 @@ def _comparison_checks(
                 else "The engineering result is missing or outside the supplied comparison tolerance."
             ),
         })
+    checks.append(_steering_series_check(actual_steering_samples, evidence, label))
     return checks
 
 
@@ -187,6 +292,7 @@ def _validate_pilot_case(manifest: Mapping[str, Any], base_dir: Path) -> dict[st
     )
     snapshot = _snapshot_from_payload(snapshot_payload)
     actual_metrics = _snapshot_metrics(snapshot)
+    actual_steering_samples = _snapshot_steering_samples(snapshot)
     acceptance = evaluate_monroc_acceptance(snapshot, criteria)
 
     raw_comparisons = manifest.get("comparisons")
@@ -209,7 +315,7 @@ def _validate_pilot_case(manifest: Mapping[str, Any], base_dir: Path) -> dict[st
     comparison_pass = True
     for comparison_id, comparison in comparisons_by_id.items():
         evidence, metadata = _json_artifact(comparison, base_dir, comparison_id)
-        checks = _comparison_checks(actual_metrics, evidence, comparison_id)
+        checks = _comparison_checks(actual_metrics, actual_steering_samples, evidence, comparison_id)
         passed = all(check["status"] == "PASS" for check in checks)
         comparison_pass = comparison_pass and passed
         comparison_results.append({

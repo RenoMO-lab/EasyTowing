@@ -34,11 +34,20 @@ class PilotValidationTests(unittest.TestCase):
                 "max_abs_synchronization_error_deg": 0.4,
                 "samples": [
                     {
+                        "joint_angles_deg": {"hitch": 0.0},
                         "minimum_clearance_mm": 24.0,
                         "max_abs_wheel_error_deg": 1.1,
                         "max_abs_synchronization_error_deg": 0.4,
                         "maximum_mechanism_residual_mm": 0.006,
                         "collision_detected": False,
+                        "steering": {
+                            "ideal_wheel_angles_deg": {"left_wheel": 1.0, "right_wheel": -1.0},
+                            "actual_wheel_angles_deg": {"left_wheel": 1.1, "right_wheel": -1.1},
+                            "wheel_errors_deg": {"left_wheel": 0.1, "right_wheel": -0.1},
+                            "ideal_axle_center_angles_deg": {"axle": 0.0},
+                            "actual_axle_center_angles_deg": {"axle": 0.0},
+                            "synchronization_errors_deg": {},
+                        },
                     },
                 ],
             },
@@ -61,6 +70,28 @@ class PilotValidationTests(unittest.TestCase):
                 "max_abs_synchronization_error_deg": 0.01,
                 "maximum_mechanism_residual_mm": 0.001,
             },
+            "steering_fields": [
+                "ideal_wheel_angles_deg",
+                "actual_wheel_angles_deg",
+                "wheel_errors_deg",
+                "ideal_axle_center_angles_deg",
+                "actual_axle_center_angles_deg",
+                "synchronization_errors_deg",
+            ],
+            "steering_tolerance_deg": 0.01,
+            "steering_samples": [
+                {
+                    "joint_angles_deg": {"hitch": 0.0},
+                    "steering": {
+                        "ideal_wheel_angles_deg": {"left_wheel": 1.0, "right_wheel": -1.0},
+                        "actual_wheel_angles_deg": {"left_wheel": 1.1, "right_wheel": -1.1},
+                        "wheel_errors_deg": {"left_wheel": 0.1, "right_wheel": -0.1},
+                        "ideal_axle_center_angles_deg": {"axle": 0.0},
+                        "actual_axle_center_angles_deg": {"axle": 0.0},
+                        "synchronization_errors_deg": {},
+                    },
+                },
+            ],
         }
         hand_sha = _write_json(hand_path, comparison)
         reference_sha = _write_json(reference_path, comparison)
@@ -122,6 +153,22 @@ class PilotValidationTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         reference = next(comparison for comparison in result["comparisons"] if comparison["id"] == "approved_reference")
         self.assertEqual(reference["status"], "FAIL")
+
+    def test_pilot_case_rejects_aggregate_only_comparison_evidence(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest = self._package(root)
+            hand_path = root / "hand-calculation.json"
+            hand_payload = json.loads(hand_path.read_text(encoding="utf-8"))
+            hand_payload.pop("steering_fields")
+            hand_payload.pop("steering_tolerance_deg")
+            hand_payload.pop("steering_samples")
+            hand_sha = _write_json(hand_path, hand_payload)
+            manifest["comparisons"][0]["sha256"] = hand_sha
+            result = validate_pilot_case(manifest, base_dir=root)
+
+        self.assertEqual(result["status"], "INVALID_PACKAGE")
+        self.assertIn("steering_fields", result["message"])
 
 
 if __name__ == "__main__":

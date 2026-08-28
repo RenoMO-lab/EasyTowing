@@ -263,6 +263,51 @@ def _axle_payload(axle_solution, axle: Axle | None = None) -> dict[str, object]:
     return payload
 
 
+def _steering_sweep_detail_payload(snapshot: dict[str, object]) -> dict[str, object]:
+    """Keep per-pose steering outputs available for engineering comparison."""
+
+    ideal_wheel_angles: dict[str, object] = {}
+    ideal_axle_center_angles: dict[str, object] = {}
+    raw_axles = snapshot.get("axles")
+    if isinstance(raw_axles, list):
+        for raw_axle in raw_axles:
+            if not isinstance(raw_axle, dict):
+                continue
+            axle_id = raw_axle.get("axle_id")
+            if isinstance(axle_id, str) and "center_steering_angle_deg" in raw_axle:
+                ideal_axle_center_angles[axle_id] = raw_axle["center_steering_angle_deg"]
+            raw_wheels = raw_axle.get("wheels")
+            wheels = raw_wheels if isinstance(raw_wheels, list) else [
+                raw_axle.get("left_wheel"),
+                raw_axle.get("right_wheel"),
+            ]
+            for raw_wheel in wheels:
+                if not isinstance(raw_wheel, dict):
+                    continue
+                wheel_id = raw_wheel.get("wheel_id")
+                if isinstance(wheel_id, str) and "steering_angle_deg" in raw_wheel:
+                    ideal_wheel_angles[wheel_id] = raw_wheel["steering_angle_deg"]
+
+    actual = snapshot.get("actual_steering")
+    actual = actual if isinstance(actual, dict) else {}
+    return {
+        "ideal_wheel_angles_deg": ideal_wheel_angles,
+        "actual_wheel_angles_deg": dict(actual.get("wheel_angles_deg", {}))
+        if isinstance(actual.get("wheel_angles_deg"), dict)
+        else {},
+        "wheel_errors_deg": dict(actual.get("errors_deg", {}))
+        if isinstance(actual.get("errors_deg"), dict)
+        else {},
+        "ideal_axle_center_angles_deg": ideal_axle_center_angles,
+        "actual_axle_center_angles_deg": dict(actual.get("axle_center_angles_deg", {}))
+        if isinstance(actual.get("axle_center_angles_deg"), dict)
+        else {},
+        "synchronization_errors_deg": dict(actual.get("synchronization_errors_deg", {}))
+        if isinstance(actual.get("synchronization_errors_deg"), dict)
+        else {},
+    }
+
+
 def _envelope_payload(envelope) -> dict[str, object]:
     if isinstance(envelope, CircleEnvelope):
         return {
@@ -2560,6 +2605,7 @@ def build_combination_sweep_payload(
                 "collision_detected": snapshot["clearance"]["collision_detected"],
                 "max_abs_wheel_error_deg": wheel_error_deg,
                 "max_abs_synchronization_error_deg": sync_error_deg,
+                "steering": _steering_sweep_detail_payload(snapshot),
             }
             samples.append(sample)
             if failed_checks:

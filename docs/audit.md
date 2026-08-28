@@ -211,6 +211,9 @@ so a physical-feasibility PASS alone is never a release authorization.
   validator. It requires those external artifacts and compares the saved
   result against both hand-calculation and approved-reference metrics, but it
   intentionally has no customer case data and cannot authorize release.
+- Multi-body sweep evidence now retains complete per-pose steering series, and
+  the pilot validator checks every selected wheel, axle-center, and
+  synchronization value rather than only summary maxima.
 
 ## Observed user-flow problem
 

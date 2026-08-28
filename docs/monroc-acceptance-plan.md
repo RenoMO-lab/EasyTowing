@@ -76,7 +76,11 @@ with these fields:
 - `engineering_snapshot.path` and its SHA-256, taken from the saved revision.
 - `comparisons` containing both `hand_calculation` and `approved_reference`.
   Each comparison is a hashed JSON artifact with expected values and explicit
-  non-negative tolerances for all four pilot metrics.
+  non-negative tolerances for all four pilot metrics. Each comparison must
+  also provide `steering_fields`, `steering_tolerance_deg`, and a
+  `steering_samples` array keyed by the complete joint-angle pose. The selected
+  steering fields are compared for every wheel, axle-center, and synchronization
+  value in every supplied pose; a missing or extra value fails the package.
 
 Run the package validator from the repository root:
 
