@@ -159,7 +159,10 @@ class ReportingTests(unittest.TestCase):
                     "maximum_articulation_deg": 45.0,
                 }],
             },
-            "combination_kinematics": {"maximum_constraint_residual_mm": 0.0},
+            "combination_kinematics": {
+                "maximum_constraint_residual_mm": 0.0,
+                "maximum_joint_closure_error_mm": 0.0,
+            },
             "mechanism_graph": {
                 "mechanism": {"points": [{"id": "pivot"}], "members": [{"id": "arm"}]},
                 "state": {"maximum_residual_mm": 0.0},
@@ -228,7 +231,10 @@ class ReportingTests(unittest.TestCase):
                     },
                 ],
             },
-            "combination_kinematics": {"maximum_constraint_residual_mm": 0.0},
+            "combination_kinematics": {
+                "maximum_constraint_residual_mm": 0.0,
+                "maximum_joint_closure_error_mm": 0.0,
+            },
             "mechanism_graph": {"state": {"maximum_residual_mm": 0.0}},
             "clearance": {"collision_detected": False, "minimum_clearance_mm": 25.0},
         }
@@ -250,6 +256,40 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(
             evaluation["checks"][0]["detail"],
             "body 'trailer' has no positive envelope dimensions or CAD outline",
+        )
+
+    def test_multi_body_evaluation_requires_joint_closure_evidence(self) -> None:
+        snapshot = {
+            "vehicle_combination": {
+                "body_count": 2,
+                "bodies": [
+                    {"id": "tractor", "body_length_mm": 6000.0, "body_width_mm": 2500.0, "body_polygon": []},
+                    {"id": "trailer", "body_length_mm": 5000.0, "body_width_mm": 2500.0, "body_polygon": []},
+                ],
+            },
+            "combination_kinematics": {"maximum_constraint_residual_mm": 0.0},
+            "mechanism_graph": {"state": {"maximum_residual_mm": 0.0}},
+            "clearance": {"collision_detected": False, "minimum_clearance_mm": 25.0},
+        }
+
+        evaluation = evaluate_engineering_snapshot(snapshot)
+        self.assertEqual(evaluation["status"], "FAIL")
+        self.assertEqual(
+            [check["id"] for check in evaluation["checks"] if not check["pass"]],
+            ["JOINT_CLOSURE"],
+        )
+
+    def test_malformed_numeric_evidence_fails_closed(self) -> None:
+        evaluation = evaluate_engineering_snapshot({
+            "combination_kinematics": {"maximum_constraint_residual_mm": "not-a-number"},
+            "mechanism_graph": {"state": {"maximum_residual_mm": "not-a-number"}},
+            "clearance": {"collision_detected": False, "minimum_clearance_mm": "not-a-number"},
+        })
+
+        self.assertEqual(evaluation["status"], "FAIL")
+        self.assertEqual(
+            [check["id"] for check in evaluation["checks"] if not check["pass"]],
+            ["KINEMATICS", "MECHANISM", "CLEARANCE"],
         )
 
     def test_snapshot_reports_use_saved_clearance_target(self) -> None:

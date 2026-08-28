@@ -2591,6 +2591,11 @@ ENGINEERING_FAILURE_GUIDANCE: dict[str, dict[str, str]] = {
         "title": "Resolve multi-body closure",
         "action": "Check joint anchors, body-local coordinates, and the common maneuver radius for the failing body.",
     },
+    "JOINT_CLOSURE": {
+        "check_id": "JOINT_CLOSURE",
+        "title": "Verify articulation joint closure",
+        "action": "Check every parent and child joint anchor and rerun the maneuver until the maximum joint closure error is within tolerance.",
+    },
     "LINKAGE_NO_SOLUTION": {
         "check_id": "LINKAGE_NO_SOLUTION",
         "title": "Check linkage reach",
@@ -2718,6 +2723,21 @@ def evaluate_engineering_snapshot(
         kinematics_residual = float(raw_kinematics_residual)
     except (TypeError, ValueError):
         kinematics_residual = math.inf
+    raw_joint_closure = combination.get("maximum_joint_closure_error_mm")
+    try:
+        joint_closure = float(raw_joint_closure)
+    except (TypeError, ValueError):
+        joint_closure = math.inf
+    raw_mechanism_residual = graph_state.get("maximum_residual_mm")
+    try:
+        mechanism_residual = float(raw_mechanism_residual)
+    except (TypeError, ValueError):
+        mechanism_residual = math.inf
+    raw_minimum_clearance = clearance.get("minimum_clearance_mm")
+    try:
+        minimum_clearance = float(raw_minimum_clearance)
+    except (TypeError, ValueError):
+        minimum_clearance = None
     checks = [
         {
             "id": "MODEL_COMPLETENESS",
@@ -2733,13 +2753,31 @@ def evaluate_engineering_snapshot(
                 else f"{kinematics_residual:.3f} mm maximum rolling residual"
             ),
         },
+    ]
+    if snapshot.get("vehicle_combination") is not None:
+        checks.append(
+            {
+                "id": "JOINT_CLOSURE",
+                "pass": math.isfinite(joint_closure) and joint_closure <= 0.01,
+                "detail": (
+                    "not evaluated"
+                    if raw_joint_closure is None
+                    else f"{joint_closure:.3f} mm maximum joint closure error"
+                ),
+            }
+        )
+    checks.extend([
         {
             "id": "MECHANISM",
-            "pass": bool(graph_state) and float(graph_state.get("maximum_residual_mm", math.inf)) <= 0.01,
+            "pass": bool(graph_state) and math.isfinite(mechanism_residual) and mechanism_residual <= 0.01,
             "detail": (
                 "not solved"
                 if not graph_state
-                else f"{float(graph_state.get('maximum_residual_mm', math.inf)):.3f} mm maximum member residual"
+                else (
+                    "not solved"
+                    if not math.isfinite(mechanism_residual)
+                    else f"{mechanism_residual:.3f} mm maximum member residual"
+                )
             ),
         },
         {
@@ -2750,16 +2788,17 @@ def evaluate_engineering_snapshot(
         {
             "id": "CLEARANCE",
             "pass": (
-                clearance.get("minimum_clearance_mm") is not None
-                and float(clearance["minimum_clearance_mm"]) >= clearance_target_mm
+                minimum_clearance is not None
+                and math.isfinite(minimum_clearance)
+                and minimum_clearance >= clearance_target_mm
             ),
             "detail": (
                 "not evaluated"
-                if clearance.get("minimum_clearance_mm") is None
-                else f"{float(clearance['minimum_clearance_mm']):.1f} mm available; {clearance_target_mm:.1f} mm required"
+                if minimum_clearance is None or not math.isfinite(minimum_clearance)
+                else f"{minimum_clearance:.1f} mm available; {clearance_target_mm:.1f} mm required"
             ),
         },
-    ]
+    ])
     result_scope = snapshot.get("result_scope")
     all_checks_pass = all(bool(check["pass"]) for check in checks)
     return {

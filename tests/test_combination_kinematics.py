@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from dataclasses import replace
 
 from easytowing.combination_kinematics import solve_combination_kinematics
 from easytowing.errors import ArticulationLimitExceededError, InvalidGeometryError, MultiBodyKinematicConstraintError
@@ -142,6 +143,29 @@ class CombinationKinematicsTests(unittest.TestCase):
             solve_combination_kinematics(
                 two_body_combination(articulation_deg=15.0, steerable=True)
             )
+
+    def test_single_fixed_axle_does_not_infer_a_straight_maneuver(self) -> None:
+        combination = two_body_combination(articulation_deg=0.0, steerable=False)
+        under_constrained = replace(
+            combination,
+            mounted_axles=(combination.mounted_axles[0],),
+        )
+
+        with self.assertRaisesRegex(InvalidGeometryError, "explicit root turn radius"):
+            solve_combination_kinematics(under_constrained)
+
+    def test_coincident_parallel_fixed_constraints_require_a_radius(self) -> None:
+        combination = two_body_combination(articulation_deg=0.0, steerable=False)
+        same_constraint_line = replace(
+            combination,
+            mounted_axles=(
+                combination.mounted_axles[0],
+                replace(combination.mounted_axles[1], local_center=Point2D(4000.0, 0.0)),
+            ),
+        )
+
+        with self.assertRaisesRegex(InvalidGeometryError, "explicit root turn radius"):
+            solve_combination_kinematics(same_constraint_line)
 
     def test_explicit_radius_rejects_fixed_axle_constraint_conflict(self) -> None:
         with self.assertRaises(MultiBodyKinematicConstraintError):

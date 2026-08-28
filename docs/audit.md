@@ -175,16 +175,17 @@ so a physical-feasibility PASS alone is never a release authorization.
 - PostgreSQL persistence now has composite tenant-scoped foreign keys across
   sessions, projects, revisions, approvals, jobs, artifacts, and audit actors;
   application checks remain in place as the first authorization boundary.
-- Verification on 2026-08-28: 213 automated tests passed with 3 expected
+- Verification on 2026-08-28: 220 automated tests passed with 3 expected
   PostgreSQL integration skips; Python compilation, browser JavaScript syntax,
   whitespace checks, and real-browser desktop/mobile workflow checks passed.
 
 ## Why it is not release-ready
 
-- The default reference graph fails collision and steering-limit checks over
-  part of its range. That is an honest diagnostic result; the UI now shows
-  next engineering actions, but those actions still need Monroc terminology
-  and validated design examples.
+- The new-study walkthrough now uses a physically separated reference graph and
+  a deliberately narrow +/-15 degree demonstration range, so the hard physical
+  checks pass without hiding collision or clearance failures. It remains
+  simulation data, not Monroc geometry, and expanding the range must be tested
+  against the actual approved mechanism and wheel limits.
 - Steering-error acceptance is explicitly pending Monroc-approved thresholds.
 - The browser graph editor now supports editable points, members, outputs,
   driver arcs, and wheel mappings, including shared point connections. It is

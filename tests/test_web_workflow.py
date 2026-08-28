@@ -99,6 +99,20 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn('payload.result_scope === "ideal_kinematics"', javascript)
         self.assertIn("Ideal targets only. Build and solve the mechanism", javascript)
 
+    def test_articulated_validation_fails_closed_when_kinematic_residual_is_missing(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const isCombination = Boolean(payload.vehicle_combination);", javascript)
+        self.assertIn("const kinematicsPass = isCombination", javascript)
+        self.assertIn('"Maximum rolling residual is not available"', javascript)
+
+    def test_articulated_failure_guidance_covers_joint_closure(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("JOINT_CLOSURE: {", javascript)
+        self.assertIn("Resolve parent/child closure", javascript)
+        self.assertIn("COMBINATION_REFERENCE_LINKAGE_CONFIG", javascript)
+        self.assertIn("bell_crank_pivot_x_mm: 250", javascript)
+        self.assertIn("const DEFAULT_COMBINATION_SWEEP_DEG = 15;", javascript)
+
     def test_release_checklist_distinguishes_pending_evidence_from_failure(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn(

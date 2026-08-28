@@ -62,6 +62,10 @@ def _infer_icr_from_fixed_axles(fixed_axles: tuple[tuple[str, Axle], ...]) -> Po
         raise InvalidGeometryError(
             "A multi-body maneuver requires an explicit root turn radius when no fixed axle constrains the ICR."
         )
+    if len(fixed_axles) == 1:
+        raise InvalidGeometryError(
+            "A multi-body maneuver requires an explicit root turn radius when fixed axle constraints are under-constrained."
+        )
 
     directions = [heading_vector(axle.heading_rad) for _body_id, axle in fixed_axles]
     reference = directions[0]
@@ -69,6 +73,18 @@ def _infer_icr_from_fixed_axles(fixed_axles: tuple[tuple[str, Axle], ...]) -> Po
         abs(reference.x_mm * direction.y_mm - reference.y_mm * direction.x_mm) <= 1e-10
         for direction in directions[1:]
     ):
+        # Parallel rolling constraints either describe straight motion (their
+        # normal lines are distinct) or leave the ICR on one shared line. The
+        # latter is under-constrained and must not silently become zero steering.
+        normalized_projections = []
+        for (_body_id, axle), direction in zip(fixed_axles, directions, strict=True):
+            orientation = 1.0 if reference.dot(direction) >= 0.0 else -1.0
+            normalized_direction = direction.scale(orientation)
+            normalized_projections.append(normalized_direction.dot(axle.center))
+        if max(normalized_projections) - min(normalized_projections) <= 1e-9:
+            raise InvalidGeometryError(
+                "A multi-body maneuver requires an explicit root turn radius when fixed axle constraints are under-constrained."
+            )
         return None
 
     xx = 0.0

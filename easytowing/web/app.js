@@ -1,3 +1,5 @@
+const DEFAULT_COMBINATION_SWEEP_DEG = 15;
+
 const state = {
   activeRequest: 0,
   optimizationRequest: 0,
@@ -48,8 +50,8 @@ const state = {
       parentBodyId: null,
       parentJointId: null,
       articulationDeg: 0,
-      articulationMinDeg: -45,
-      articulationMaxDeg: 45,
+      articulationMinDeg: -DEFAULT_COMBINATION_SWEEP_DEG,
+      articulationMaxDeg: DEFAULT_COMBINATION_SWEEP_DEG,
       articulationStepDeg: 5,
       articulationLimitDeg: 45,
       parentAnchorXmm: 0,
@@ -69,8 +71,8 @@ const state = {
       parentBodyId: "body_1",
       parentJointId: "joint_2",
       articulationDeg: 0,
-      articulationMinDeg: -45,
-      articulationMaxDeg: 45,
+      articulationMinDeg: -DEFAULT_COMBINATION_SWEEP_DEG,
+      articulationMaxDeg: DEFAULT_COMBINATION_SWEEP_DEG,
       articulationStepDeg: 5,
       articulationLimitDeg: 45,
       parentAnchorXmm: 2180,
@@ -383,6 +385,10 @@ const FAILURE_GUIDANCE = {
     title: "Resolve multi-body closure",
     action: "Check joint anchors, body-local coordinates, and the common maneuver radius for the failing body.",
   },
+  JOINT_CLOSURE: {
+    title: "Resolve parent/child closure",
+    action: "Check the parent and child joint anchors, body-local coordinates, and articulation pose for the failing connection.",
+  },
   LINKAGE_NO_SOLUTION: {
     title: "Check linkage reach",
     action: "Adjust link lengths or pivot locations so the fixed-length circles intersect throughout the requested range.",
@@ -470,6 +476,17 @@ const REFERENCE_LINKAGE_CONFIG = {
   driver_arc_center_x_mm: 180,
   driver_arc_center_y_mm: 120,
   driver_arc_radius_mm: 20,
+};
+
+// Keep the combination walkthrough away from the axle beam while preserving
+// the legacy single-layout reference geometry and its link lengths.
+const COMBINATION_REFERENCE_LINKAGE_CONFIG = {
+  ...REFERENCE_LINKAGE_CONFIG,
+  bell_crank_pivot_x_mm: 250,
+  steering_pivot_x_mm: 810,
+  companion_steering_pivot_x_mm: 810,
+  companion_steering_arm_neutral_angle_deg: -165.70831033749917,
+  driver_arc_center_x_mm: 430,
 };
 
 const LINKAGE_FIELDS = [
@@ -3502,8 +3519,8 @@ function newCombinationBody(index) {
     parentBodyId: index === 0 ? null : (state.combinationBodies[index - 1]?.id || `body_${index}`),
     parentJointId: index === 0 ? null : `joint_${index + 1}`,
     articulationDeg: 0,
-    articulationMinDeg: -45,
-    articulationMaxDeg: 45,
+    articulationMinDeg: -DEFAULT_COMBINATION_SWEEP_DEG,
+    articulationMaxDeg: DEFAULT_COMBINATION_SWEEP_DEG,
     articulationStepDeg: 5,
     articulationLimitDeg: 45,
     parentAnchorXmm: 1500,
@@ -4126,7 +4143,7 @@ function graphPoint(id, xMm, yMm, mode, bodyId, envelopeRadiusMm = 0) {
 }
 
 function buildMechanismGraphFromCombination() {
-  const config = state.linkageConfig || REFERENCE_LINKAGE_CONFIG;
+  const config = state.linkageConfig || COMBINATION_REFERENCE_LINKAGE_CONFIG;
   if (
     config.companion_enabled === false
     || config.companion_steering_arm_length_mm === null
@@ -5539,22 +5556,53 @@ function renderCurrentValidation(payload) {
     ? Math.abs(Number(graphState.maximum_residual_mm))
     : null;
   const combinationResidual = payload.combination_kinematics?.maximum_constraint_residual_mm;
+  const isCombination = Boolean(payload.vehicle_combination);
+  const kinematicsPass = isCombination
+    ? combinationResidual !== null
+      && combinationResidual !== undefined
+      && Number.isFinite(Number(combinationResidual))
+      && Number(combinationResidual) <= 0.01
+    : true;
+  const jointClosure = payload.combination_kinematics?.maximum_joint_closure_error_mm;
   const minimumClearance = payload.clearance?.minimum_clearance_mm;
   const clearanceTarget = Number(state.optimizationSettings.clearanceTargetMm);
   const checks = [
     {
       id: "KINEMATICS",
       label: "Kinematics",
-      pass: combinationResidual === null || combinationResidual === undefined || Number(combinationResidual) <= 0.01,
+      pass: kinematicsPass,
       status: idealOnly
-        ? ((combinationResidual === null || combinationResidual === undefined || Number(combinationResidual) <= 0.01)
+        ? (kinematicsPass
           ? "pass"
           : "fail")
         : null,
       detail: combinationResidual === null || combinationResidual === undefined
-        ? "Single-layout solve completed"
+        ? (isCombination
+          ? "Maximum rolling residual is not available"
+          : "Single-layout solve completed")
         : `Maximum rolling residual ${Number(combinationResidual).toFixed(3)} mm`,
     },
+    ...(payload.vehicle_combination
+      ? [{
+        id: "JOINT_CLOSURE",
+        label: "Joint closure",
+        pass: jointClosure !== null
+          && jointClosure !== undefined
+          && Number.isFinite(Number(jointClosure))
+          && Number(jointClosure) <= 0.01,
+        status: idealOnly
+          ? ((jointClosure !== null
+            && jointClosure !== undefined
+            && Number.isFinite(Number(jointClosure))
+            && Number(jointClosure) <= 0.01)
+            ? "pass"
+            : "fail")
+          : null,
+        detail: jointClosure === null || jointClosure === undefined
+          ? "Maximum parent/child anchor closure is not available"
+          : `${Number(jointClosure).toFixed(3)} mm maximum parent/child anchor closure`,
+      }]
+      : []),
     {
       id: "MECHANISM",
       label: "Mechanism",
