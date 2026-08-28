@@ -1641,6 +1641,104 @@ def _combination_kinematic_payload(
     }
 
 
+def _combination_ideal_demo_payload(
+    beta_deg: float,
+    combination: VehicleCombination,
+    solution: CombinationKinematicSolution,
+    vehicle: VehicleLayout,
+    *,
+    clearance_target_mm: float,
+) -> dict[str, object]:
+    """Return maneuver evidence without inventing a physical mechanism result."""
+
+    ideal_solution = solution.ideal_steering
+    front_solution = max(ideal_solution.axles, key=lambda item: item.center.x_mm, default=None)
+    rear_solution = min(ideal_solution.axles, key=lambda item: item.center.x_mm, default=None)
+    phase_deg = (
+        None
+        if front_solution is None
+        or rear_solution is None
+        or front_solution.axle_id == rear_solution.axle_id
+        else front_solution.center_steering_angle_deg - rear_solution.center_steering_angle_deg
+    )
+    body_half_length = vehicle.body_length_mm / 2.0
+    body_half_width = vehicle.body_width_mm / 2.0
+    body_outline_points = list(vehicle.body_polygon) or [
+        Point2D(-body_half_length, -body_half_width),
+        Point2D(body_half_length, -body_half_width),
+        Point2D(body_half_length, body_half_width),
+        Point2D(-body_half_length, body_half_width),
+    ]
+    payload = {
+        "result_scope": "ideal_kinematics",
+        "beta_deg": beta_deg,
+        "beta_rad": math.radians(beta_deg),
+        "turn_radius_mm": solution.root_turn_radius_mm,
+        "icr": None if ideal_solution.icr is None else _point_payload(ideal_solution.icr),
+        "vehicle": {
+            "id": vehicle.id,
+            "name": vehicle.name,
+            "axle_count": len(vehicle.axles),
+            "body_length_mm": vehicle.body_length_mm,
+            "body_width_mm": vehicle.body_width_mm,
+            "origin": _point_payload(vehicle.origin),
+        },
+        "vehicle_config": _vehicle_config_payload(vehicle),
+        "actual_steering": None,
+        "body_outline": [
+            _point_payload(point + vehicle.origin)
+            for point in body_outline_points
+        ],
+        "axles": [
+            _axle_payload(axle_solution, axle)
+            for axle, axle_solution in zip(vehicle.axles, ideal_solution.axles, strict=True)
+        ],
+        "vehicle_combination": serialize_vehicle_combination(combination),
+        "combination_kinematics": _combination_kinematic_payload(
+            combination,
+            solution,
+            root_pose=None,
+        )["kinematics"],
+        "linkage": None,
+        "mechanism_graph": None,
+        "mechanism_mapping": None,
+        "clearance": None,
+        "metrics": {
+            "max_abs_wheel_angle_deg": max(
+                (abs(value) for value in ideal_solution.wheel_steering_angles_deg().values()),
+                default=0.0,
+            ),
+            "front_axle_center_angle_deg": (
+                None if front_solution is None else front_solution.center_steering_angle_deg
+            ),
+            "rear_axle_center_angle_deg": (
+                None if rear_solution is None else rear_solution.center_steering_angle_deg
+            ),
+            "linkage_actual_steering_deg": None,
+            "linkage_vs_ideal_front_axle_deg": None,
+            "linkage_actual_front_left_deg": None,
+            "linkage_actual_front_right_deg": None,
+            "linkage_vs_ideal_front_left_deg": None,
+            "linkage_vs_ideal_front_right_deg": None,
+            "minimum_clearance_mm": None,
+            "max_abs_wheel_error_deg": None,
+            "mean_abs_wheel_error_deg": None,
+            "rms_wheel_error_deg": None,
+            "max_abs_inner_wheel_error_deg": None,
+            "max_abs_outer_wheel_error_deg": None,
+            "front_rear_synchronization_error_deg": None,
+            "synchronization_errors_deg": {},
+            "max_abs_synchronization_error_deg": None,
+            "front_rear_phase_deg": phase_deg,
+        },
+    }
+    payload["engineering_evaluation"] = evaluate_engineering_snapshot(
+        payload,
+        clearance_target_mm=clearance_target_mm,
+    )
+    return payload
+
+
 def _vehicle_config_payload(vehicle: VehicleLayout) -> dict[str, object]:
     def synchronization_payload(item: SteeringSynchronization) -> dict[str, object]:
         return {
@@ -2110,6 +2208,7 @@ def _project_combination_inputs(
         mechanism_drivers=mechanism_drivers,
         steering_assignments=steering_assignments,
         clearance_target_mm=clearance_target_mm,
+        ideal_only=mechanism_graph is None,
     )
     if mechanism_graph is not None:
         beta_min_deg, beta_max_deg = _parse_articulation_bounds(body)
@@ -2162,6 +2261,7 @@ def build_demo_payload(
     clearance_target_mm: float = 20.0,
     mechanism_previous_state: MechanismGraphState | None = None,
     mechanism_state_sink: list[MechanismGraphState] | None = None,
+    ideal_only: bool = False,
 ) -> dict[str, object]:
     if wheelbase_mm <= 0.0 or track_mm <= 0.0:
         raise ValueError("wheelbase_mm and track_mm must be positive")
@@ -2188,6 +2288,19 @@ def build_demo_payload(
         solution = solve_ideal_steering_from_radius(vehicle, radius)
     if combination is None and abs(beta_deg) > vehicle.maximum_articulation_deg + 1e-9:
         raise ArticulationLimitExceededError(beta_deg, vehicle.maximum_articulation_deg)
+    if ideal_only:
+        if combination is None:
+            raise ValueError("ideal_only is only supported for an explicit vehicle combination")
+        if linkage_rig is not None or mechanism_graph is not None:
+            raise ValueError("ideal_only cannot be combined with a physical mechanism")
+        assert combination_solution is not None
+        return _combination_ideal_demo_payload(
+            beta_deg,
+            combination,
+            combination_solution,
+            vehicle,
+            clearance_target_mm=clearance_target_mm,
+        )
     linkage: dict[str, object] | None
     mechanism_payload: dict[str, object] | None = None
     if mechanism_graph is not None:
@@ -4241,12 +4354,19 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 assert beta_deg is not None and wheelbase_mm is not None and track_mm is not None
                 if not math.isfinite(beta_deg):
                     raise ValueError("beta_deg must be finite")
-                rig = _parse_linkage_rig(body.get("linkage", body.get("linkage_config")))
+                ideal_only = body.get("ideal_only", False)
+                if not isinstance(ideal_only, bool):
+                    raise ValueError("ideal_only must be a JSON boolean")
                 raw_mechanism = body.get("mechanism_graph")
                 mechanism_graph = (
                     None
                     if raw_mechanism is None
                     else _parse_mechanism_graph(raw_mechanism)
+                )
+                rig = (
+                    None
+                    if ideal_only and combination is not None and mechanism_graph is None
+                    else _parse_linkage_rig(body.get("linkage", body.get("linkage_config")))
                 )
                 mechanism_drivers = _parse_mechanism_drivers(
                     body.get("mechanism_drivers")
@@ -4274,6 +4394,7 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                     mechanism_drivers=mechanism_drivers,
                     steering_assignments=steering_assignments,
                     clearance_target_mm=clearance_target_mm,
+                    ideal_only=ideal_only,
                 )
             except EngineeringError as error:
                 self._send_json(

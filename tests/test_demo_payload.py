@@ -118,6 +118,24 @@ class DemoPayloadTests(unittest.TestCase):
             0.01,
         )
 
+    def test_ideal_only_combination_payload_does_not_claim_physical_evidence(self) -> None:
+        combination = build_reference_demo_combination(articulation_rad=math.radians(12.0))
+
+        payload = build_demo_payload(
+            12.0,
+            combination=combination,
+            root_turn_radius_mm=9000.0,
+            clearance_target_mm=35.0,
+            ideal_only=True,
+        )
+
+        self.assertEqual(payload["result_scope"], "ideal_kinematics")
+        self.assertIsNone(payload["actual_steering"])
+        self.assertIsNone(payload["mechanism_graph"])
+        self.assertIsNone(payload["clearance"])
+        self.assertEqual(payload["engineering_evaluation"]["status"], "INCOMPLETE")
+        self.assertEqual(payload["engineering_evaluation"]["clearance_target_mm"], 35.0)
+
     def test_pre_graph_combination_payload_reports_body_collision(self) -> None:
         reference = build_reference_demo_combination()
         overlapping = replace(

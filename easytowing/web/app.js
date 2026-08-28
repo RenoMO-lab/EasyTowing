@@ -915,6 +915,8 @@ function renderProjectDashboardStatus() {
     engineeringDetail = state.combinationActive && state.maneuverResolved && state.mechanismGraph
       ? "Solve the physical mechanism to generate current-pose evidence."
       : "Resolve the maneuver and solve the physical mechanism.";
+  } else if (state.currentPayload.result_scope === "ideal_kinematics") {
+    engineeringDetail = "Ideal maneuver targets are ready; build and solve the physical mechanism before interpreting feasibility.";
   } else if (!state.currentValidationPass) {
     engineeringStatus = "FAIL";
     engineeringDetail = "One or more current-pose hard checks failed.";
@@ -1488,6 +1490,13 @@ function renderWheelTable(axles, actualSteering = null) {
 
 function renderSynchronizationTable(payload) {
   synchronizationTable.replaceChildren();
+  if (payload.result_scope === "ideal_kinematics") {
+    const row = document.createElement("div");
+    row.className = "wheel-row";
+    row.textContent = "Ideal targets only. Build and solve the mechanism before comparing actual steering and error.";
+    synchronizationTable.appendChild(row);
+    return;
+  }
   const synchronizations = payload.vehicle_config?.steering_synchronizations || [];
   if (synchronizations.length === 0) {
     const row = document.createElement("div");
@@ -2131,16 +2140,21 @@ function renderReleaseChecklist() {
   const acceptancePass = !state.acceptanceCriteriaDirty && acceptanceIsReleaseApproved(state.acceptanceResult);
   const currentChecksStatus = !hasRevision || state.workspaceDirty || !state.currentPayload
     ? "pending"
-    : (currentPass ? "pass" : "fail");
-  const currentChecksDetail = !hasRevision
-    ? "Create or save a revision before running the current-pose checks."
-    : (state.workspaceDirty
-      ? "Save the changed workspace as a new revision before interpreting the checks."
-      : (!state.currentPayload
-        ? "Run the maneuver and mechanism solve before interpreting the checks."
-        : (currentPass
-          ? "Kinematics, mechanism, collision, and clearance checks pass."
-          : "Resolve every reported hard-check failure.")));
+    : (state.currentPayload.result_scope === "ideal_kinematics"
+      ? "pending"
+      : (currentPass ? "pass" : "fail"));
+  let currentChecksDetail = "Resolve every reported hard-check failure.";
+  if (!hasRevision) {
+    currentChecksDetail = "Create or save a revision before running the current-pose checks.";
+  } else if (state.workspaceDirty) {
+    currentChecksDetail = "Save the changed workspace as a new revision before interpreting the checks.";
+  } else if (!state.currentPayload) {
+    currentChecksDetail = "Run the maneuver and mechanism solve before interpreting the checks.";
+  } else if (state.currentPayload.result_scope === "ideal_kinematics") {
+    currentChecksDetail = "Maneuver targets are ready; build and solve the physical mechanism before interpreting the checks.";
+  } else if (currentPass) {
+    currentChecksDetail = "Kinematics, mechanism, collision, and clearance checks pass.";
+  }
   const fullRangeStatus = !hasRevision || state.workspaceDirty
     ? "pending"
     : (state.combinationActive
@@ -2226,7 +2240,9 @@ function renderResultsDecision({ ready, currentPass, fullRangePass, acceptancePa
     return;
   }
   const currentStatus = state.currentPayload
-    ? (state.workspaceDirty ? "PENDING" : (currentPass ? "PASS" : "FAIL"))
+    ? (state.currentPayload.result_scope === "ideal_kinematics"
+      ? "PENDING"
+      : (state.workspaceDirty ? "PENDING" : (currentPass ? "PASS" : "FAIL")))
     : "NOT RUN";
   const fullRangeStatus = state.workspaceDirty
     ? "PENDING"
@@ -2235,6 +2251,8 @@ function renderResultsDecision({ ready, currentPass, fullRangePass, acceptancePa
       : (fullRangePass ? "PASS" : "NOT RUN"));
   const engineeringStatus = !state.currentPayload
     ? "NOT RUN"
+    : state.currentPayload.result_scope === "ideal_kinematics"
+      ? "INCOMPLETE"
     : state.workspaceDirty
       ? "INCOMPLETE"
     : !currentPass || fullRangeStatus === "FAIL"
@@ -4861,8 +4879,11 @@ async function calculateCombinationStudy(betaOverride = null) {
     throw new Error("Signed root radius must be a non-zero finite number.");
   }
   const betaDeg = primaryBody?.articulationDeg || 0;
+  const idealOnly = state.combinationActive && !state.mechanismGraph;
   combinationCalculateButton.disabled = true;
-  combinationStatus.textContent = "Resolving body poses, rolling constraints, and steering angles...";
+  combinationStatus.textContent = idealOnly
+    ? "Resolving body poses and ideal steering targets..."
+    : "Resolving body poses, rolling constraints, and steering angles...";
   try {
     const response = await fetch("/api/calculate/kinematic", {
       method: "POST",
@@ -4871,11 +4892,12 @@ async function calculateCombinationStudy(betaOverride = null) {
         beta_deg: betaDeg,
         root_turn_radius_mm: radius,
         combination: serializedCombination(),
-        linkage: state.mechanismGraph ? undefined : serializedLinkageConfig(),
+        linkage: state.combinationActive ? undefined : serializedLinkageConfig(),
         mechanism_graph: state.mechanismGraph,
         mechanism_drivers: state.mechanismGraph ? state.mechanismDrivers : undefined,
         steering_assignments: state.mechanismGraph ? state.steeringAssignments : undefined,
         clearance_target_mm: Number(state.optimizationSettings.clearanceTargetMm),
+        ideal_only: idealOnly,
       }),
     });
     if (!response.ok) {
@@ -4902,7 +4924,9 @@ async function calculateCombinationStudy(betaOverride = null) {
     await renderActiveView(payload);
     updateExportLinks();
     const residual = Number(payload.combination_kinematics?.maximum_constraint_residual_mm || 0);
-    combinationStatus.textContent = `Resolved ${payload.vehicle_combination.body_count} bodies and ${payload.vehicle.axle_count} axles. Maximum rolling residual ${residual.toFixed(3)} mm.`;
+    combinationStatus.textContent = idealOnly
+      ? `Maneuver resolved for ${payload.vehicle_combination.body_count} bodies and ${payload.vehicle.axle_count} axles. Ideal targets are ready; build the mechanism graph for actual steering.`
+      : `Resolved ${payload.vehicle_combination.body_count} bodies and ${payload.vehicle.axle_count} axles. Maximum rolling residual ${residual.toFixed(3)} mm.`;
   } finally {
     combinationCalculateButton.disabled = false;
   }
@@ -5500,6 +5524,7 @@ function renderDiagram(payload, options = {}) {
 }
 
 function renderCurrentValidation(payload) {
+  const idealOnly = payload.result_scope === "ideal_kinematics";
   const linkageState = payload.linkage?.state;
   const graphState = payload.mechanism_graph?.state;
   const linkageResiduals = linkageState
@@ -5521,6 +5546,11 @@ function renderCurrentValidation(payload) {
       id: "KINEMATICS",
       label: "Kinematics",
       pass: combinationResidual === null || combinationResidual === undefined || Number(combinationResidual) <= 0.01,
+      status: idealOnly
+        ? ((combinationResidual === null || combinationResidual === undefined || Number(combinationResidual) <= 0.01)
+          ? "pass"
+          : "fail")
+        : null,
       detail: combinationResidual === null || combinationResidual === undefined
         ? "Single-layout solve completed"
         : `Maximum rolling residual ${Number(combinationResidual).toFixed(3)} mm`,
@@ -5530,17 +5560,23 @@ function renderCurrentValidation(payload) {
       label: "Mechanism",
       pass: (Boolean(linkageState) && maximumLinkageResidual <= 0.01)
         || (maximumGraphResidual !== null && maximumGraphResidual <= 0.01),
+      status: idealOnly ? "pending" : null,
       detail: graphState
         ? `Graph residual ${maximumGraphResidual.toFixed(3)} mm across all rigid members`
         : (linkageState
           ? `Maximum rigid-link residual ${maximumLinkageResidual.toFixed(3)} mm`
-          : "No physical mechanism has been solved"),
+          : (idealOnly
+            ? "Pending: build and solve the physical mechanism graph"
+            : "No physical mechanism has been solved")),
     },
     {
       id: "COLLISION",
       label: "Collision",
       pass: payload.clearance?.collision_detected === false,
-      detail: payload.clearance?.collision_detected === false
+      status: idealOnly ? "pending" : null,
+      detail: idealOnly
+        ? "Pending: evaluate connected and non-connected component envelopes after the mechanism solve"
+        : payload.clearance?.collision_detected === false
         ? "No non-connected component overlap"
         : "Collision detected or not evaluated",
     },
@@ -5550,8 +5586,11 @@ function renderCurrentValidation(payload) {
       pass: minimumClearance !== null
         && minimumClearance !== undefined
         && Number(minimumClearance) >= clearanceTarget,
+      status: idealOnly ? "pending" : null,
       detail: minimumClearance === null || minimumClearance === undefined
-        ? `Not evaluated; ${clearanceTarget.toFixed(1)} mm required`
+        ? (idealOnly
+          ? `Pending: solve the mechanism before checking the ${clearanceTarget.toFixed(1)} mm margin`
+          : `Not evaluated; ${clearanceTarget.toFixed(1)} mm required`)
         : `${Number(minimumClearance).toFixed(1)} mm available; ${clearanceTarget.toFixed(1)} mm required`,
     },
   ];
@@ -5560,25 +5599,39 @@ function renderCurrentValidation(payload) {
   for (const check of checks) {
     const row = document.createElement("div");
     row.className = "validation-check";
-    row.dataset.status = check.pass ? "pass" : "fail";
-    const status = document.createElement("strong");
-    status.textContent = check.pass ? "PASS" : "FAIL";
+    const checkStatus = check.status || (check.pass ? "pass" : "fail");
+    row.dataset.status = checkStatus;
+    const statusLabel = document.createElement("strong");
+    statusLabel.textContent = checkStatus.toUpperCase();
     const detail = document.createElement("span");
     detail.textContent = `${check.label}: ${check.detail}`;
-    row.append(status, detail);
+    row.append(statusLabel, detail);
     currentValidationChecks.appendChild(row);
   }
 
   renderCurrentSteeringInterpretation(payload);
 
   const passed = checks.filter((check) => check.pass).length;
-  state.currentValidationPass = passed === checks.length;
-  currentValidationCard.dataset.status = state.currentValidationPass ? "pass" : "fail";
-  currentValidationStatus.textContent = state.currentValidationPass ? "PASS" : "FAIL";
-  currentValidationSummary.textContent = `${passed} of ${checks.length} hard checks passed.`;
+  const pending = checks.filter((check) => (check.status || (check.pass ? "pass" : "fail")) === "pending").length;
+  state.currentValidationPass = !idealOnly && passed === checks.length;
+  currentValidationCard.dataset.status = idealOnly
+    ? "pending"
+    : (state.currentValidationPass ? "pass" : "fail");
+  currentValidationStatus.textContent = idealOnly
+    ? "PENDING"
+    : (state.currentValidationPass ? "PASS" : "FAIL");
+  currentValidationSummary.textContent = idealOnly
+    ? `${passed} of ${checks.length} checks passed; ${pending} physical checks are pending the mechanism solve.`
+    : `${passed} of ${checks.length} hard checks passed.`;
   renderFailureGuidance(
     currentValidationGuidance,
-    checks.filter((check) => !check.pass).map((check) => check.id),
+    idealOnly
+      ? [{
+        check_id: "MECHANISM",
+        title: "Build and solve the physical mechanism",
+        action: "Define the rigid component graph and wheel mappings. Actual steering, collision, and clearance are evaluated only after this solve.",
+      }]
+      : checks.filter((check) => !check.pass).map((check) => check.id),
   );
   renderReleaseChecklist();
   renderProjectDashboardStatus();
@@ -5590,9 +5643,17 @@ function renderCurrentSteeringInterpretation(payload) {
     return;
   }
   const maximumError = Number(payload?.metrics?.max_abs_wheel_error_deg);
-  const errorText = Number.isFinite(maximumError)
+  const errorText = payload.result_scope === "ideal_kinematics"
+    ? "The maneuver has produced ideal wheel targets; actual steering error is pending the physical mechanism solve."
+    : Number.isFinite(maximumError)
     ? `Current-pose maximum ideal-versus-actual wheel error: ${maximumError.toFixed(2)} deg.`
     : "Current-pose ideal-versus-actual wheel error is unavailable.";
+  if (payload.result_scope === "ideal_kinematics") {
+    currentSteeringInterpretation.dataset.status = "pending";
+    currentSteeringStatus.textContent = "STEERING CRITERION PENDING";
+    currentSteeringDetail.textContent = `${errorText} Enter signed-off Monroc limits only after the mechanism produces actual steering.`;
+    return;
+  }
   const acceptance = state.acceptanceCriteriaDirty ? null : state.acceptanceResult;
   const steeringCheck = acceptance?.checks?.find((check) => check.id === "STEERING_ACCURACY");
   if (steeringCheck?.status === "PASS" && acceptance?.criteria_approval?.status === "APPROVED") {
@@ -5735,6 +5796,11 @@ function updateSummary(payload, options = {}) {
     linkageErrorValue.textContent = formatAngle(payload.metrics?.max_abs_wheel_error_deg);
     linkageResidualValue.textContent = `${Number(graphState.maximum_residual_mm).toFixed(3)} mm max`;
     linkageBranchValue.textContent = `Graph solve / ${graphState.iterations} iterations`;
+  } else {
+    linkageSteerValue.textContent = "n/a";
+    linkageErrorValue.textContent = "n/a";
+    linkageResidualValue.textContent = "n/a";
+    linkageBranchValue.textContent = "n/a";
   }
 
   if (payload.clearance) {
@@ -5751,6 +5817,10 @@ function updateSummary(payload, options = {}) {
     } else {
       clearanceStatusValue.textContent = "Clear";
     }
+  } else {
+    clearanceValue.textContent = "n/a";
+    clearancePairValue.textContent = "n/a";
+    clearanceStatusValue.textContent = "Not evaluated";
   }
 
   renderVehicleCombinationSummary(payload);

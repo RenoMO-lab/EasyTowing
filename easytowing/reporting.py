@@ -2760,8 +2760,15 @@ def evaluate_engineering_snapshot(
             ),
         },
     ]
+    result_scope = snapshot.get("result_scope")
+    all_checks_pass = all(bool(check["pass"]) for check in checks)
     return {
-        "status": "PASS" if all(bool(check["pass"]) for check in checks) else "FAIL",
+        "status": (
+            "PASS"
+            if all_checks_pass
+            else ("INCOMPLETE" if result_scope == "ideal_kinematics" else "FAIL")
+        ),
+        "result_scope": result_scope,
         "checks": checks,
         "guidance": engineering_failure_guidance(
             check["id"] for check in checks if not bool(check["pass"])

@@ -138,6 +138,11 @@ so a physical-feasibility PASS alone is never a release authorization.
 - The workspace now labels seeded inputs as simulation/reference data and places
   a plain-language PASS, FAIL, PENDING, and BLOCKED reading guide beside the
   engineering decision.
+- An explicit multi-body maneuver now returns ideal body poses and wheel targets
+  without falling through to the legacy linkage solver. Until the physical
+  mechanism graph is built and solved, actual steering, collision, clearance,
+  and engineering feasibility remain visibly PENDING rather than appearing as
+  failed or completed evidence.
 - A live browser check also resolved a synthetic three-body, three-axle
   combination, built three articulation drivers with six wheel mappings, and
   solved the generalized graph. This verifies the product path only; it is not
@@ -166,7 +171,7 @@ so a physical-feasibility PASS alone is never a release authorization.
 - PostgreSQL persistence now has composite tenant-scoped foreign keys across
   sessions, projects, revisions, approvals, jobs, artifacts, and audit actors;
   application checks remain in place as the first authorization boundary.
-- Verification on 2026-08-28: 211 automated tests passed with 3 expected
+- Verification on 2026-08-28: 213 automated tests passed with 3 expected
   PostgreSQL integration skips; Python compilation, browser JavaScript syntax,
   whitespace checks, and real-browser desktop/mobile workflow checks passed.
 

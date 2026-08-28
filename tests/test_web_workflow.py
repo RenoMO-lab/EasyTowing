@@ -85,6 +85,13 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("Ideal: ${formatAngle(idealAngle)} / Actual:", javascript)
         self.assertIn("Error: ${formatAngle(error)}", javascript)
 
+    def test_ideal_maneuver_output_is_separate_from_physical_mechanism_evidence(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('const idealOnly = state.combinationActive && !state.mechanismGraph;', javascript)
+        self.assertIn('ideal_only: idealOnly', javascript)
+        self.assertIn('payload.result_scope === "ideal_kinematics"', javascript)
+        self.assertIn("Ideal targets only. Build and solve the mechanism", javascript)
+
     def test_release_checklist_distinguishes_pending_evidence_from_failure(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn(
