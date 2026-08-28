@@ -168,6 +168,39 @@ class PlanarMechanismGraph:
     def point_by_id(self) -> dict[str, MechanismPoint]:
         return {point.id: point for point in self.points}
 
+    def unanchored_components(self) -> tuple[tuple[str, ...], ...]:
+        """Return point components with no fixed or driven reference point.
+
+        A closed free-link loop can satisfy every length constraint while still
+        floating as a rigid body. Such a component has no physical relationship
+        to the vehicle or actuator input and must not produce steering output.
+        """
+
+        point_by_id = self.point_by_id()
+        adjacency: dict[str, set[str]] = {point_id: set() for point_id in point_by_id}
+        for member in self.members:
+            adjacency[member.point_a_id].add(member.point_b_id)
+            adjacency[member.point_b_id].add(member.point_a_id)
+
+        components: list[tuple[str, ...]] = []
+        visited: set[str] = set()
+        for point_id in point_by_id:
+            if point_id in visited:
+                continue
+            stack = [point_id]
+            visited.add(point_id)
+            component: list[str] = []
+            while stack:
+                current = stack.pop()
+                component.append(current)
+                for neighbor in adjacency[current]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+            if not any(point_by_id[item].mode in {"fixed", "driven"} for item in component):
+                components.append(tuple(sorted(component)))
+        return tuple(components)
+
     def connected_member_pairs(self) -> frozenset[frozenset[str]]:
         member_points = {
             member.id: {member.point_a_id, member.point_b_id}
@@ -402,6 +435,13 @@ def solve_mechanism_graph(
     if missing_drivers:
         raise InvalidGeometryError(
             f"Driven mechanism points have no resolved driver position: {missing_drivers!r}."
+        )
+    unanchored_components = graph.unanchored_components()
+    if unanchored_components:
+        formatted = ", ".join("[" + ", ".join(component) + "]" for component in unanchored_components)
+        raise LinkageNoSolutionError(
+            "mechanism-graph",
+            f"Graph contains an unanchored point component: {formatted}.",
         )
     positions = _build_positions(graph, driven_positions, previous_state, body_poses)
     free_points = tuple(point for point in graph.points if point.mode == "free")

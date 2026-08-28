@@ -22,6 +22,13 @@ The generalized `PlanarMechanismGraph` supports:
   connected pair exempted only at its shared joint rather than across the full
   member envelopes.
 
+Every connected point component must contain at least one fixed or driven
+point. A closed loop made only from free points can satisfy all of its member
+lengths while floating as an unconstrained rigid body, so the solver rejects
+that graph before producing steering output. Independent anchored components
+remain valid, which supports multiple axle modules or mechanisms on different
+articulated bodies.
+
 The legacy primary/companion linkage remains available as a compatibility model
 and as the current optimization target. It can be adapted into the generalized
 graph and is regression-tested against the analytical linkage behavior.

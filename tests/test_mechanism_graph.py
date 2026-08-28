@@ -152,6 +152,24 @@ class MechanismGraphTests(unittest.TestCase):
         with self.assertRaises(LinkageNoSolutionError):
             solve_mechanism_graph(graph)
 
+    def test_floating_closed_component_is_rejected(self) -> None:
+        graph = PlanarMechanismGraph(
+            id="floating_component",
+            points=(
+                MechanismPoint("a", Point2D(0.0, 0.0)),
+                MechanismPoint("b", Point2D(100.0, 0.0)),
+                MechanismPoint("c", Point2D(50.0, 80.0)),
+            ),
+            members=(
+                RigidMember("ab", "a", "b", 100.0),
+                RigidMember("bc", "b", "c", 94.33981132056604),
+                RigidMember("ca", "c", "a", 94.33981132056604),
+            ),
+        )
+
+        with self.assertRaisesRegex(LinkageNoSolutionError, "unanchored point component"):
+            solve_mechanism_graph(graph)
+
     def test_driven_point_requires_an_explicit_driver_position(self) -> None:
         graph = PlanarMechanismGraph(
             id="missing_driver",

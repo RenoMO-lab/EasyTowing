@@ -49,6 +49,11 @@ control-plane adapters.
 6. Repeat the hard checks across the full articulation range.
 7. Save the complete revision evidence before any review decision.
 
+Mechanism graph feasibility also requires topology, not only numeric closure:
+each connected component must include a fixed or driven reference point. A
+free-only closed loop is rejected because its internally consistent geometry is
+not physically tied to the vehicle or the steering input.
+
 For articulated combinations, "full range" means the Cartesian product of the
 signed range for every articulation joint. Explicit joint ranges override the
 configured/default bounds; an omitted joint is never silently held at nominal.
