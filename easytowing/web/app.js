@@ -2129,6 +2129,32 @@ function renderReleaseChecklist() {
     && Boolean(approval.decided_by)
     && approval.submitted_by !== approval.decided_by;
   const acceptancePass = !state.acceptanceCriteriaDirty && acceptanceIsReleaseApproved(state.acceptanceResult);
+  const currentChecksStatus = !hasRevision || state.workspaceDirty || !state.currentPayload
+    ? "pending"
+    : (currentPass ? "pass" : "fail");
+  const currentChecksDetail = !hasRevision
+    ? "Create or save a revision before running the current-pose checks."
+    : (state.workspaceDirty
+      ? "Save the changed workspace as a new revision before interpreting the checks."
+      : (!state.currentPayload
+        ? "Run the maneuver and mechanism solve before interpreting the checks."
+        : (currentPass
+          ? "Kinematics, mechanism, collision, and clearance checks pass."
+          : "Resolve every reported hard-check failure.")));
+  const fullRangeStatus = !hasRevision || state.workspaceDirty
+    ? "pending"
+    : (state.combinationActive
+      ? (state.sweepValidationPayload?.status === "PASS"
+        ? "pass"
+        : (state.sweepValidationPayload?.status === "FAIL" ? "fail" : "pending"))
+      : (state.activeRevisionHasFullRangeEvidence ? "pass" : "pending"));
+  const fullRangeDetail = fullRangeStatus === "pass"
+    ? "Saved evidence covers the configured articulation/design-case range."
+    : (fullRangeStatus === "fail"
+      ? "Correct the first failing pose before approval."
+      : (state.combinationActive
+        ? "Run and save a passing full-range validation sweep."
+        : "Run a hard-feasible optimization and save the accepted result."));
   const checklist = [
     {
       label: "Saved revision",
@@ -2141,17 +2167,13 @@ function renderReleaseChecklist() {
     },
     {
       label: "Current hard checks",
-      status: currentPass ? "pass" : "fail",
-      detail: currentPass ? "Kinematics, mechanism, collision, and clearance checks pass." : "Run the current pose and resolve every hard-check failure.",
+      status: currentChecksStatus,
+      detail: currentChecksDetail,
     },
     {
       label: "Full articulation range",
-      status: fullRangePass ? "pass" : "fail",
-      detail: fullRangePass
-        ? "Saved evidence covers the configured articulation/design-case range."
-        : (state.combinationActive
-          ? "Run and save a passing full-range validation sweep."
-          : "Run a hard-feasible optimization and save the accepted result."),
+      status: fullRangeStatus,
+      detail: fullRangeDetail,
     },
     {
       label: "Monroc acceptance criteria",
@@ -2204,13 +2226,17 @@ function renderResultsDecision({ ready, currentPass, fullRangePass, acceptancePa
     return;
   }
   const currentStatus = state.currentPayload
-    ? (currentPass ? "PASS" : "FAIL")
+    ? (state.workspaceDirty ? "PENDING" : (currentPass ? "PASS" : "FAIL"))
     : "NOT RUN";
-  const fullRangeStatus = state.combinationActive
-    ? (state.sweepValidationPayload?.status || "NOT RUN")
-    : (fullRangePass ? "PASS" : "NOT RUN");
+  const fullRangeStatus = state.workspaceDirty
+    ? "PENDING"
+    : (state.combinationActive
+      ? (state.sweepValidationPayload?.status || "NOT RUN")
+      : (fullRangePass ? "PASS" : "NOT RUN"));
   const engineeringStatus = !state.currentPayload
     ? "NOT RUN"
+    : state.workspaceDirty
+      ? "INCOMPLETE"
     : !currentPass || fullRangeStatus === "FAIL"
       ? "FAIL"
       : fullRangeStatus !== "PASS"

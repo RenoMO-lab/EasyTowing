@@ -85,6 +85,15 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("Ideal: ${formatAngle(idealAngle)} / Actual:", javascript)
         self.assertIn("Error: ${formatAngle(error)}", javascript)
 
+    def test_release_checklist_distinguishes_pending_evidence_from_failure(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn(
+            "const currentChecksStatus = !hasRevision || state.workspaceDirty || !state.currentPayload",
+            javascript,
+        )
+        self.assertIn('state.workspaceDirty ? "PENDING"', javascript)
+        self.assertIn('state.workspaceDirty\n      ? "INCOMPLETE"', javascript)
+
     def test_workspace_explains_the_next_action_and_step_state(self) -> None:
         html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
