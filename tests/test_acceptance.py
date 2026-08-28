@@ -86,6 +86,52 @@ class AcceptanceTests(unittest.TestCase):
         full_range = next(check for check in result["checks"] if check["id"] == "FULL_RANGE")
         self.assertEqual(full_range["status"], "FAIL")
 
+    def test_articulated_acceptance_requires_saved_physical_feasibility_pass(self) -> None:
+        snapshot = passing_snapshot()
+        snapshot["vehicle_combination"] = {"body_count": 2}
+        snapshot["engineering_evaluation"] = {
+            "status": "FAIL",
+            "checks": [{"id": "CLEARANCE", "pass": False}],
+        }
+        criteria = MonrocAcceptanceCriteria(
+            case_id="MONROC-ARTICULATED",
+            minimum_clearance_mm=20.0,
+            maximum_wheel_error_deg=2.0,
+            maximum_synchronization_error_deg=1.0,
+        )
+
+        result = evaluate_monroc_acceptance(snapshot, criteria)
+
+        self.assertEqual(result["status"], "FAIL")
+        physical = next(check for check in result["checks"] if check["id"] == "PHYSICAL_FEASIBILITY")
+        self.assertEqual(physical["status"], "FAIL")
+
+    def test_articulated_acceptance_passes_only_with_complete_physical_gate(self) -> None:
+        snapshot = passing_snapshot()
+        snapshot["vehicle_combination"] = {"body_count": 2}
+        snapshot["engineering_evaluation"] = {
+            "status": "PASS",
+            "checks": [
+                {"id": "KINEMATICS", "pass": True},
+                {"id": "JOINT_CLOSURE", "pass": True},
+                {"id": "MECHANISM", "pass": True},
+                {"id": "COLLISION", "pass": True},
+                {"id": "CLEARANCE", "pass": True},
+            ],
+        }
+        criteria = MonrocAcceptanceCriteria(
+            case_id="MONROC-ARTICULATED",
+            minimum_clearance_mm=20.0,
+            maximum_wheel_error_deg=2.0,
+            maximum_synchronization_error_deg=1.0,
+        )
+
+        result = evaluate_monroc_acceptance(snapshot, criteria)
+
+        self.assertEqual(result["status"], "PASS")
+        physical = next(check for check in result["checks"] if check["id"] == "PHYSICAL_FEASIBILITY")
+        self.assertEqual(physical["status"], "PASS")
+
     def test_criteria_reject_non_finite_limits(self) -> None:
         with self.assertRaises(ValueError):
             MonrocAcceptanceCriteria(

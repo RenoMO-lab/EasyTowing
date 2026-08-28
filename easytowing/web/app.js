@@ -2042,7 +2042,10 @@ function renderMonrocAcceptance(result) {
       ? `PASS: ${displayedResult.case_id} matches the approved Monroc profile and satisfies its limits.`
       : `PASS: ${displayedResult.case_id} satisfies the entered Monroc limits, but the profile is not release-approved.`;
   } else if (status === "FAIL") {
-    acceptanceStatusNote.textContent = `FAIL: ${displayedResult.case_id || "case"} does not satisfy one or more configured Monroc limits.`;
+    const physicalCheck = displayedResult.checks?.find((check) => check.id === "PHYSICAL_FEASIBILITY");
+    acceptanceStatusNote.textContent = physicalCheck?.status === "FAIL"
+      ? `FAIL: ${displayedResult.case_id || "case"} is not physically feasible, so its acceptance cannot pass.`
+      : `FAIL: ${displayedResult.case_id || "case"} does not satisfy one or more acceptance checks.`;
   } else if (status === "UNAPPROVED") {
     acceptanceStatusNote.textContent = `UNAPPROVED: ${displayedResult.message || "The entered limits do not match an approved Monroc profile."}`;
   } else if (state.acceptanceCriteriaDirty) {
@@ -4156,7 +4159,6 @@ function buildMechanismGraphFromCombination() {
   const angleOutputs = [];
   const drivers = [];
   const assignments = [];
-  const primaryJointId = primaryCombinationJointId();
   const pointAt = (pivotX, pivotY, angleDeg, lengthMm) => ({
     x: pivotX + Math.cos(angleDeg * Math.PI / 180) * lengthMm,
     y: pivotY + Math.sin(angleDeg * Math.PI / 180) * lengthMm,
@@ -4276,8 +4278,10 @@ function buildMechanismGraphFromCombination() {
           maximum_angle_deg: stop === null ? undefined : Number(stop),
         },
       );
+      // The root mechanism follows the explicit workspace articulation input;
+      // each child mechanism follows its own parent joint in a chain or branch.
       const inputId = bodyIndex === 0
-        ? (state.combinationBodies.length > 1 ? primaryJointId : "articulation")
+        ? "articulation"
         : (body.parentJointId || `joint_${bodyIndex + 1}`);
       drivers.push({
         point_id: ids.driver,

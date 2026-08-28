@@ -45,9 +45,11 @@ yet a production SaaS product or an approved Monroc design-release system.
 
 - Monroc-approved acceptance thresholds and representative CAD/hand-calculation
   cases are not defined in the repository.
-- The default demo graph is intentionally a reference mechanism and currently
-  produces visible clearance and steering-limit failures across part of the
-  range. This is useful diagnostic behavior, not a release result.
+- The default new-study graph is intentionally a separated reference mechanism
+  with a narrow +/-15 degree demonstration range so the physical checks can
+  pass without hiding failure behavior. It remains simulation data, not a
+  release result; the older Reference Demo Project and any expanded range can
+  still expose clearance or steering-limit failures.
 - The browser graph builder creates a repeatable reference graph per steerable
   axle; it does not yet replace a CAD-grade editor for arbitrary shared
   tie-rod networks.

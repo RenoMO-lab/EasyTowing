@@ -171,6 +171,23 @@ def _has_sweep_collision(snapshot: Mapping[str, Any]) -> bool | None:
     return any(values) if values else None
 
 
+def _physical_feasibility(snapshot: Mapping[str, Any]) -> tuple[bool, str]:
+    """Require the saved physical gate before classifying an articulated case."""
+
+    if snapshot.get("vehicle_combination") is None:
+        return True, "Single-layout physical feasibility is evaluated by the legacy acceptance checks."
+    evaluation = snapshot.get("engineering_evaluation")
+    if not isinstance(evaluation, Mapping) or evaluation.get("status") != "PASS":
+        return False, "The saved articulated physical-feasibility evaluation is not PASS."
+    checks = evaluation.get("checks")
+    if not isinstance(checks, list) or not checks or any(
+        not isinstance(check, Mapping) or check.get("pass") is not True
+        for check in checks
+    ):
+        return False, "The saved articulated physical-feasibility checks are incomplete or failing."
+    return True, "The saved articulated physical-feasibility checks are PASS."
+
+
 def _check(
     check_id: str,
     label: str,
@@ -236,6 +253,16 @@ def evaluate_monroc_acceptance(
     residuals.extend(_sweep_values(snapshot, "maximum_mechanism_residual_mm"))
 
     checks: list[dict[str, object]] = []
+    physical_pass, physical_detail = _physical_feasibility(snapshot)
+    if snapshot.get("vehicle_combination") is not None:
+        checks.append(_check(
+            "PHYSICAL_FEASIBILITY",
+            "Physical feasibility",
+            "PASS" if physical_pass else "FAIL",
+            "PASS",
+            passed=physical_pass,
+            detail=physical_detail,
+        ))
     collision = (snapshot.get("clearance") or {}).get("collision_detected") if isinstance(snapshot.get("clearance"), Mapping) else None
     sweep_collision = _has_sweep_collision(snapshot)
     collision_values = [value for value in (collision, sweep_collision) if isinstance(value, bool)]

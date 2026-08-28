@@ -42,7 +42,9 @@ angle calculator:
 The result is interpreted as follows: **PASS** means the configured
 physical-feasibility checks pass; **FAIL** means the design is diagnostic only;
 **INCOMPLETE** means the required validation evidence has not been produced.
-Steering accuracy and synchronization remain separate acceptance checks.
+For articulated combinations, acceptance also requires the saved
+physical-feasibility gate to be PASS. Steering accuracy and synchronization
+remain explicit acceptance checks against the approved Monroc profile.
 Manufacturing release also requires Monroc acceptance and independent approval,
 so a physical-feasibility PASS alone is never a release authorization.
 
@@ -93,8 +95,8 @@ so a physical-feasibility PASS alone is never a release authorization.
   manufacturing-release gate together. The authentication controls are a real
   form and the validation control stays disabled unless the multi-body graph is
   actually active and solved.
-- The Validate step labels its four current checks as physical-feasibility
-  checks and shows the measured ideal-versus-actual steering error separately.
+- The Validate step labels its current checks as physical-feasibility checks and
+  shows the measured ideal-versus-actual steering error separately.
   Steering acceptance remains `PENDING` until signed-off Monroc limits are
   evaluated, preventing a feasibility PASS from being read as steering approval.
 - The Project dashboard now surfaces the active revision's engineering verdict,
@@ -175,7 +177,7 @@ so a physical-feasibility PASS alone is never a release authorization.
 - PostgreSQL persistence now has composite tenant-scoped foreign keys across
   sessions, projects, revisions, approvals, jobs, artifacts, and audit actors;
   application checks remain in place as the first authorization boundary.
-- Verification on 2026-08-28: 220 automated tests passed with 3 expected
+- Verification on 2026-08-28: 224 automated tests passed with 3 expected
   PostgreSQL integration skips; Python compilation, browser JavaScript syntax,
   whitespace checks, and real-browser desktop/mobile workflow checks passed.
 
@@ -186,7 +188,10 @@ so a physical-feasibility PASS alone is never a release authorization.
   checks pass without hiding collision or clearance failures. It remains
   simulation data, not Monroc geometry, and expanding the range must be tested
   against the actual approved mechanism and wheel limits.
-- Steering-error acceptance is explicitly pending Monroc-approved thresholds.
+- Steering-error acceptance is explicitly pending Monroc-approved thresholds;
+  articulated acceptance now also exposes the physical-feasibility gate so the
+  acceptance result cannot be PASS while the saved mechanism is physically
+  invalid.
 - The browser graph editor now supports editable points, members, outputs,
   driver arcs, and wheel mappings, including shared point connections. It is
   still not a complete CAD mechanism editor: CAD feature recognition, automatic

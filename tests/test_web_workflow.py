@@ -113,6 +113,20 @@ class WebWorkflowContractTests(unittest.TestCase):
         self.assertIn("bell_crank_pivot_x_mm: 250", javascript)
         self.assertIn("const DEFAULT_COMBINATION_SWEEP_DEG = 15;", javascript)
 
+    def test_articulated_acceptance_exposes_the_physical_gate(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        html = (ROOT / "easytowing" / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('check.id === "PHYSICAL_FEASIBILITY"', javascript)
+        self.assertIn("is not physically feasible, so its acceptance cannot pass", javascript)
+        self.assertIn("saved physical-feasibility gate to pass", html)
+
+    def test_generated_root_mechanism_uses_explicit_articulation_input(self) -> None:
+        javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn(
+            'const inputId = bodyIndex === 0\n        ? "articulation"',
+            javascript,
+        )
+
     def test_release_checklist_distinguishes_pending_evidence_from_failure(self) -> None:
         javascript = (ROOT / "easytowing" / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn(

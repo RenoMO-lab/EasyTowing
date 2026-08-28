@@ -21,6 +21,7 @@ Current status:
 - Authenticated administrators can provision tenant users with role assignment from the Workspace access panel; creation is tenant-scoped and audited, and new reviewers are available for revision routing immediately.
 - Runtime health exposes separate liveness (`/api/health`) and dependency readiness (`/api/ready`) checks; PostgreSQL deployments can require a fresh worker heartbeat with `EASYTOWING_REQUIRE_WORKER=1`.
 - Multi-body revision exports are diagnostic by default; a controlled release manifest is available only after engineering PASS, Monroc acceptance, and independent approval. SVG/DXF/PNG do not constitute a controlled CAD release package.
+- Articulated acceptance includes the saved physical-feasibility gate, so an acceptance result cannot pass while combination kinematics, mechanism closure, collision, or clearance evidence is failing.
 - Monroc acceptance evaluations remain diagnostic unless their exact criteria match a protected approved profile configured with `EASYTOWING_MONROC_ACCEPTANCE_PROFILES_JSON`.
 - A separate `python -m easytowing.pilot` validator is ready for supplied Monroc case packages with hashed CAD, hand-calculation, and approved-reference evidence; pilot results never authorize release by themselves.
 - Multi-body sweep samples retain per-pose ideal, actual, error, axle-center, and synchronization series so pilot comparisons are not limited to aggregate metrics.
